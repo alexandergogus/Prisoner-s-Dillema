@@ -34,7 +34,10 @@ int main() {
         StrategyType::TIT_FOR_TAT,
         StrategyType::Friedman,
         StrategyType::Random,
-        StrategyType::Joss
+        StrategyType::Joss,
+        StrategyType::TIT_FOR_2TAT,
+        StrategyType::TITS2_FOR_TAT,
+        StrategyType::Pavlov
     };
     const int ROUNDS = 500;
     const int NUM_STRATS = strategies.size();
