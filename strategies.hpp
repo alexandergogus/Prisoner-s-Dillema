@@ -14,7 +14,10 @@ enum class StrategyType : uint8_t {
     TIT_FOR_TAT,
     Friedman,
     Random,
-    Joss
+    Joss,
+    TIT_FOR_2TAT,
+    TITS2_FOR_TAT,
+    Pavlov
 };
 
 inline Move strategy_holy(uint64_t /*opp_history*/, uint64_t /*my_history*/ = 0) {
@@ -56,6 +59,27 @@ inline Move strategy_joss(uint64_t opp_history, uint64_t /*my_history*/ = 0){
     return last_opp_move ? Move::DEFECT : Move::COOPERATE;
 }
 
+inline Move strategy_tit_for_2tat(uint64_t opp_history, uint64_t /*my_history*/ = 0){
+    if (opp_history == 0) return Move::COOPERATE;
+    bool last_two = opp_history & 3;
+    return (last_two == 3) ? Move::DEFECT : Move::COOPERATE;
+}
+
+inline Move strategy_2tits_for_tat(uint64_t opp_history,  uint64_t /*my_history*/ = 0){
+    if (opp_history == 0) return Move::COOPERATE;
+    return ((opp_history & 3) != 0) ? Move::DEFECT : Move::COOPERATE;
+
+}
+
+inline Move strategy_pavlov(uint64_t opp_history,  uint64_t my_history = 0){
+    if (opp_history == 0) return Move::COOPERATE;
+    bool last_opp = opp_history & 1;
+    bool last_me = my_history & 1;
+    bool win = (last_me == 0 && last_opp == 0) || (last_me == 1 && last_opp == 0);
+    bool next_move = win ? last_me : !last_me;
+    return next_move ? Move::DEFECT : Move::COOPERATE;
+}
+
 // Dispatcher
 inline Move get_move(StrategyType type, uint64_t opp_history, uint64_t my_history = 0) {
     switch (type) {
@@ -65,6 +89,9 @@ inline Move get_move(StrategyType type, uint64_t opp_history, uint64_t my_histor
         case StrategyType::Friedman: return strategy_friedman(opp_history, my_history);
         case StrategyType::Random: return strategy_random(opp_history, my_history);
         case StrategyType::Joss: return strategy_joss(opp_history, my_history);
+        case StrategyType::TIT_FOR_2TAT: return strategy_tit_for_2tat(opp_history, my_history);
+        case StrategyType::TITS2_FOR_TAT: return strategy_2tits_for_tat(opp_history, my_history);
+        case StrategyType::Pavlov: return strategy_pavlov(opp_history, my_history);
         default:                        return Move::COOPERATE;
     }
 }
@@ -78,6 +105,9 @@ inline const char* strategy_name(StrategyType type) {
         case StrategyType::Friedman: return "Friedman";
         case StrategyType::Random: return "Random";
         case StrategyType::Joss: return "Joss";
+        case StrategyType::TIT_FOR_2TAT: return "TIT_FOR_2TAT";
+        case StrategyType::TITS2_FOR_TAT: return "2TITS_FOR_TAT";
+        case StrategyType::Pavlov: return "Pavlov";
         default:                        return "?";
     }
 }
