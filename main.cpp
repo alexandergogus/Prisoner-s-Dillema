@@ -37,10 +37,25 @@ int main() {
         StrategyType::Joss,
         StrategyType::TIT_FOR_2TAT,
         StrategyType::TITS2_FOR_TAT,
-        StrategyType::Pavlov
+        StrategyType::Pavlov,
+        StrategyType::Generous_TIT_FOR_TAT,
+        StrategyType::Average_64,
+        StrategyType::Tideman_and_Chieruzzi,
+        StrategyType::Nydegger,
+        StrategyType::Grogman,
+        StrategyType::Shubik,
+        StrategyType::Stein_Rapoport,
+        StrategyType::Davis,
+        StrategyType::Graaskamp,
+        StrategyType::First_by_Downing,
+        StrategyType::Feld
     };
-    const int ROUNDS = 500;
+    const int ROUNDS = 800;
     const int NUM_STRATS = strategies.size();
+    std::cout << "=== AMOUNT OF STRATEGIES ===" << std::endl;
+    std::cout << "There are " << NUM_STRATS << " strategies" << std::endl;
+    std::cout << std::endl;
+
     std::vector<int> scores(NUM_STRATS, 0);
 
     std::cout << "=== TOURNAMENT RESULTS ===" << std::endl;
