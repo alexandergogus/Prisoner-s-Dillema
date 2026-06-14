@@ -48,7 +48,17 @@ int main() {
         StrategyType::Davis,
         StrategyType::Graaskamp,
         StrategyType::First_by_Downing,
-        StrategyType::Feld
+        StrategyType::Feld,
+        StrategyType::Tullock,
+        StrategyType::GRASR,
+        StrategyType::K31R,
+        StrategyType::K32R,
+        StrategyType::K33R,
+        StrategyType::K35R,
+        StrategyType::K36R,
+        StrategyType::K37R,
+        StrategyType::K38R,
+        StrategyType::K39R
     };
     const int ROUNDS = 800;
     const int NUM_STRATS = strategies.size();
