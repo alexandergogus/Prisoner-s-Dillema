@@ -32,14 +32,8 @@ enum class StrategyType : uint8_t {
     Feld,
     Tullock,
     GRASR,
-    K31R,
-    K32R,
-    K33R,
-    K35R,
-    K36R,
-    K37R,
-    K38R,
-    K39R
+    K31R, K32R, K33R, K35R, K36R, K37R, K38R, K39R, K40R,
+    K41R, K42R, K43R, K44R
 };
 
 inline Move strategy_holy(uint64_t /*opp_history*/, uint64_t /*my_history*/ = 0) {
@@ -1159,6 +1153,368 @@ inline Move strategy_k39r(uint64_t opp_history, uint64_t my_history) {
     return (move == 1) ? Move::DEFECT : Move::COOPERATE;
 }
 
+inline Move strategy_k40r(uint64_t opp_history, uint64_t my_history) {
+    static int S;
+    static int W;
+    static double Q;
+
+    int M = 0;
+    uint64_t tmp = opp_history;
+    while (tmp) { ++M; tmp >>= 1; }
+    ++M;
+
+    int J = (opp_history & 1) ? 1 : 0;
+    int JA = (my_history & 1) ? 1 : 0;
+
+    static thread_local std::mt19937 rng(std::random_device{}());
+    static thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
+    double R = dist(rng);
+
+    int result = JA;
+
+    if (M != 1) goto label505;
+    S = 3;
+    W = 0;
+    Q = 0.8;
+
+label505:
+    S = S + 1;
+    if (J != 1) goto label510;
+    W = W + 1;
+    Q = Q / 2.0;
+
+label510:
+    if (M >= 3) goto label520;
+    result = 0;
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+
+label520:
+    if (J == 1) goto label522;
+    goto label530;
+
+label522:
+    W = W + 1;
+    if (W > 2 && (W % 3 == 0 || (W - 1) % 3 == 0)) goto label901;
+    goto label550;
+
+label901:
+    S = 1;
+    Q = Q / 2.0;
+    goto label580;
+
+label530:
+    goto label580;
+
+label550:
+    if (R >= Q) goto label560;
+    result = 0;
+    Q = Q / 2.0;
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+
+label560:
+    Q = Q / 2.0;
+    result = 1;
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+
+label580:
+    if (S == 1 || S == 2) goto label1000;
+    if (W > 2 && (W % 3 == 0 || (W - 1) % 3 == 0)) goto label901;
+    result = 0;
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+
+label1000:
+    result = 1;
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+}
+
+inline Move strategy_k41r(uint64_t opp_history, uint64_t my_history) {
+    static int ICASE;
+    static int IFORGV;
+    static int LAST[12];
+
+    int M = 0;
+    uint64_t tmp = opp_history;
+    while (tmp) { ++M; tmp >>= 1; }
+    ++M;
+
+    int J = (opp_history & 1) ? 1 : 0;
+    int JA = (my_history & 1) ? 1 : 0;
+
+    int result = JA;
+
+    if (M == 1) {
+        ICASE = 1;
+        IFORGV = 0;
+        for (int i = 0; i < 12; ++i) LAST[i] = 0;
+    }
+    if (ICASE == 1) goto label100;
+    if (ICASE == 2) goto label200;
+    if (ICASE == 3) goto label300;
+
+label100:
+    result = J;
+    ICASE = J + 1;
+    goto label400;
+
+label200:
+    result = J;
+    ICASE = 3;
+    if (J == 1) ICASE = 1;
+    goto label400;
+
+label300:
+    result = J;
+    if (IFORGV < M) result = 0;
+    IFORGV = IFORGV + 20 * J;
+    ICASE = 1;
+    goto label400;
+
+label400:
+    int LSUM = 0;
+    for (int i = 0; i < 12; ++i) LSUM += LAST[i];
+    for (int i = 0; i < 11; ++i) LAST[i] = LAST[i+1];
+    LAST[11] = J;
+    if (LSUM >= 5) result = 1;
+
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+}
+
+inline Move strategy_k42r(uint64_t opp_history, uint64_t my_history) {
+    static int L3MOV = 0;
+    static int L3ECH = 0;
+    static int IDEF = 0;
+    static int ICOOP = 0;
+    static int IPICK = 0;
+    static int I2PCK = 0;
+    static int J2PCK = 0;
+    static int MHIST[2][2] = {{0,0},{0,0}};
+
+    int rounds = 0;
+    uint64_t tmp = opp_history;
+    while (tmp) { ++rounds; tmp >>= 1; }
+    int MOVEN = rounds + 1;
+
+    int JPICK = (opp_history & 1) ? 1 : 0;
+    int JA    = (my_history & 1) ? 1 : 0;
+
+    int result = JA;
+
+    if (MOVEN == 1) {
+        L3MOV = 0;
+        L3ECH = 0;
+        IDEF = 0;
+        ICOOP = 0;
+        IPICK = 0;
+        I2PCK = 0;
+        J2PCK = 0;
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j)
+                MHIST[i][j] = 0;
+        result = 0;
+        goto finish;
+    }
+
+    if (MOVEN > 2) {
+        MHIST[I2PCK][JPICK]++;
+    }
+
+    if (IDEF != 0) {
+        result = 1;
+        goto periodic_check;
+    }
+
+    if (IPICK != 0 && JPICK != 0) {
+        L3MOV++;
+        if (L3MOV >= 3) {
+            result = 0;
+            L3MOV = 0;
+            L3ECH = 0;
+            goto periodic_check;
+        }
+    } else {
+        L3MOV = 0;
+        if (IPICK == JPICK) {
+            L3ECH = 0;
+        } else {
+            if (JPICK == I2PCK && IPICK == J2PCK) {
+                L3ECH++;
+                if (L3ECH >= 3) {
+                    L3ECH = 0;
+                    L3MOV = 0;
+                    ICOOP = 1;
+                }
+            } else {
+                L3ECH = 0;
+            }
+        }
+    }
+
+    result = JPICK;
+
+periodic_check:
+    if ((MOVEN - 2) % 25 == 0 && MOVEN != 2) {
+        IDEF = 0;
+        int JNCOP = MHIST[0][0] + MHIST[1][0];
+
+        if (JNCOP > 17) {
+        } else if (JNCOP < 8) {
+            if (JNCOP < 3) IDEF = 1;
+        } else {
+            if (100 * MHIST[0][0] / JNCOP < 70) IDEF = 1;
+        }
+
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j)
+                MHIST[i][j] = 0;
+
+        if (IDEF != 0) {
+            ICOOP = 0;
+            L3MOV = 0;
+            L3ECH = 0;
+            result = 1;
+        }
+    }
+
+    if (ICOOP != 0 && result != 0) {
+        ICOOP = 0;
+        result = 0;
+    }
+
+finish:
+    I2PCK = IPICK;
+    J2PCK = JPICK;
+    IPICK = result;
+
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+}
+
+inline Move strategy_k43r(uint64_t opp_history, uint64_t my_history) {
+    static int NCC = 0;
+    static int NCD = 0;
+    static int NDC = 0;
+    static int NDD = 0;
+    static int KOUNT = 0;
+    static int MYTWIN = 0;
+    static int IOLD1 = 0;
+    static int IOLD2 = 0;
+
+    int M = 0;
+    uint64_t tmp = opp_history;
+    while (tmp) { ++M; tmp >>= 1; }
+    ++M;
+
+    int J = (opp_history & 1) ? 1 : 0;
+    int result = IOLD1;
+
+    if (M == 1) {
+        NCC = NCD = NDC = NDD = 0;
+        KOUNT = 0;
+        MYTWIN = 0;
+        IOLD1 = 0;
+        IOLD2 = 0;
+        result = 0;
+        goto finish;
+    }
+    if (M >= 3) {
+        if (IOLD2 == 1) {
+            if (J == 0) NDC++; else NDD++;
+        } else {
+            if (J == 0) NCC++; else NCD++;
+        }
+    }
+
+    IOLD2 = IOLD1;
+
+    if (M < 16) {
+        if (J == 0) {
+            result = 0;
+        } else {
+            if (KOUNT >= 3) {
+                result = 0;
+            } else {
+                KOUNT++;
+                result = 1;
+            }
+        }
+    } else {
+        if (M == 17 && J == 1 && NCD == 1 && NDD == 0) {
+            MYTWIN = 1;
+        }
+        if ((NCD * 3) >= (NCC + NCD)) {
+            result = 1;
+        } else {
+            if ((M % 4) != 0) {
+                result = 0;
+            } else {
+                if (MYTWIN == 1) {
+                    result = 0;
+                } else {
+                    if (NDC >= (M / 12) || NDD == 0) {
+                        result = 1;
+                    } else {
+                        result = 0;
+                    }
+                }
+            }
+        }
+    }
+
+finish:
+    IOLD1 = result;
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+}
+
+inline Move strategy_k44r(uint64_t opp_history, uint64_t my_history) {
+    static int MC = 0;
+    static double F = 2.0;
+    static double AM = 4.0;
+
+    static std::mt19937 rng(std::random_device{}());
+    static std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    int M = 0;
+    uint64_t tmp = opp_history;
+    while (tmp) { ++M; tmp >>= 1; }
+    ++M;
+
+    int J = (opp_history & 1) ? 1 : 0;
+    int JA = (my_history & 1) ? 1 : 0;
+
+    int result = JA;
+
+    if (M == 1) {
+        MC = 0;
+        F = 2.0;
+        AM = 4.0;
+        result = 0;
+        return Move::COOPERATE;
+    }
+
+    if (M < 3) {
+        result = 0;
+        return Move::COOPERATE;
+    }
+
+    MC = MC + J;
+
+    if (MC < AM) {
+        result = 0;
+    } else if (MC == AM) {
+        result = 1;
+    } else {
+        AM = AM / F;
+        MC = 0;
+        double R = dist(rng);
+        if (R < AM) {
+            result = 0;
+        } else {
+            result = 1;
+        }
+    }
+
+    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+}
+
 // Dispatcher
 inline Move get_move(StrategyType type, uint64_t opp_history, uint64_t my_history = 0) {
     switch (type) {
@@ -1192,6 +1548,11 @@ inline Move get_move(StrategyType type, uint64_t opp_history, uint64_t my_histor
         case StrategyType::K37R: return strategy_k37r(opp_history, my_history);
         case StrategyType::K38R: return strategy_k38r(opp_history, my_history);
         case StrategyType::K39R: return strategy_k39r(opp_history, my_history);
+        case StrategyType::K40R: return strategy_k40r(opp_history, my_history);
+        case StrategyType::K41R: return strategy_k41r(opp_history, my_history);
+        case StrategyType::K42R: return strategy_k42r(opp_history, my_history);
+        case StrategyType::K43R: return strategy_k43r(opp_history, my_history);
+        case StrategyType::K44R: return strategy_k44r(opp_history, my_history);
         default:                        return Move::COOPERATE;
     }
 }
@@ -1229,491 +1590,11 @@ inline const char* strategy_name(StrategyType type) {
         case StrategyType::K37R: return "K37R";
         case StrategyType::K38R: return "K38R";
         case StrategyType::K39R: return "K39R";
-        default:                        return "?";
-    }
-}
-
-#endif
-
-inline Move strategy_joss(uint64_t opp_history, uint64_t /*my_history*/ = 0){
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::bernoulli_distribution dist(0.1);
-    if (opp_history == 0) return Move::COOPERATE;
-    if (dist(gen)) return Move::DEFECT;
-    bool last_opp_move = opp_history & 1;
-    return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_tit_for_2tat(uint64_t opp_history, uint64_t /*my_history*/ = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    bool last_two = opp_history & 3;
-    return (last_two == 3) ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_2tits_for_tat(uint64_t opp_history,  uint64_t /*my_history*/ = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    return ((opp_history & 3) != 0) ? Move::DEFECT : Move::COOPERATE;
-
-}
-
-inline Move strategy_pavlov(uint64_t opp_history,  uint64_t my_history = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    bool last_opp = opp_history & 1;
-    bool last_me = my_history & 1;
-    bool win = (last_me == 0 && last_opp == 0) || (last_me == 1 && last_opp == 0);
-    bool next_move = win ? last_me : !last_me;
-    return next_move ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_generous_tit_for_tat(uint64_t opp_history,  uint64_t /*my_history*/ = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    bool last_opp_move = opp_history & 1;
-    if (last_opp_move == 0) return Move::COOPERATE;
-    else{
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        static std::bernoulli_distribution dist(2.0/3.0);
-        return (dist(gen)) ? Move::DEFECT : Move::COOPERATE;
-
-    }
-}
-
-inline Move strategy_average64(uint64_t opp_history,  uint64_t my_history = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    std::size_t defects = std::bitset<64>(opp_history).count();
-    std::size_t rounds_played = 64 - __builtin_clzll(opp_history);
-    double defect_rate = static_cast<double>(defects)/rounds_played;
-    return (defect_rate <= 0.5) ? Move::COOPERATE : Move::DEFECT;
-}
-
-inline Move strategy_tideman_chieruzzi(uint64_t opp_history, uint64_t my_history = 0) {
-    int opp_defects = std::bitset<64>(opp_history).count();
-    int my_defects = std::bitset<64>(my_history).count();
-
-    int rounds_played = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        rounds_played++;
-        temp >>= 1;
-    }
-
-    if (rounds_played == 0) {
-        return Move::DEFECT;
-    }
-
-    bool last_opp_defected = (opp_history & 1);
-
-    if (opp_defects >= 5 && my_defects <= opp_defects - 3) {
-        return Move::DEFECT;
-    }
-    int consecutive_coop = 0;
-    uint64_t history = opp_history;
-
-    while (history && !(history & 1)) {
-        consecutive_coop++;
-        history >>= 1;
-    }
-    if (consecutive_coop >= 3) {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        static std::bernoulli_distribution dist(0.85);
-        return dist(gen) ? Move::COOPERATE : Move::DEFECT;
-    }
-    if (last_opp_defected) {
-        uint64_t prev_two = (opp_history >> 1) & 3;
-        if (prev_two == 0) {
-            return Move::COOPERATE;
-        }
-        return Move::DEFECT;
-    }
-
-    return Move::COOPERATE;
-}
-
-inline Move strategy_nydegger(uint64_t opp_history, uint64_t my_history) {
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { rounds++; temp >>= 1; }
-
-    if (rounds == 0) return Move::COOPERATE;
-    if (rounds == 1) {
-        bool opp_defected = (opp_history & 1);
-        return opp_defected ? Move::DEFECT : Move::COOPERATE;
-    }
-    if (rounds == 2) {
-        bool opp_last = (opp_history & 1);
-        return opp_last ? Move::DEFECT : Move::COOPERATE;
-    }
-    int opp3 = opp_history & 0b111;
-    int my3  = my_history & 0b111;
-
-    static const uint8_t nydegger_table[64] = {
-        // my3 = 0 (CCC)
-        0, 0, 0, 1,  0, 0, 1, 1,
-        // my3 = 1 (CCD)
-        0, 0, 1, 1,  0, 1, 1, 1,
-        // my3 = 2 (CDC)
-        0, 1, 1, 1,  1, 1, 1, 1,
-        // my3 = 3 (CDD)
-        0, 1, 1, 1,  1, 1, 1, 1,
-        // my3 = 4 (DCC)
-        0, 0, 1, 1,  1, 1, 1, 1,
-        // my3 = 5 (DCD)
-        0, 0, 1, 1,  1, 1, 1, 1,
-        // my3 = 6 (DDC)
-        0, 1, 1, 1,  1, 1, 1, 1,
-        // my3 = 7 (DDD)
-        1, 1, 1, 1,  1, 1, 1, 1
-    };
-
-    int index = (my3 << 3) | opp3;
-    bool next_defect = nydegger_table[index];
-    return next_defect ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_grofman(uint64_t opp_history, uint64_t my_history) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-
-    if (round < 2) {
-        return Move::COOPERATE;
-    }
-
-    if (round < 7) {
-        bool last_opp_move = opp_history & 1;
-        return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-    }
-    bool last_my_move = my_history & 1;
-    bool last_opp_move = opp_history & 1;
-
-    if (last_my_move == last_opp_move) {
-        return Move::COOPERATE;
-    }
-    else {
-        static thread_local std::mt19937 gen(std::random_device{}());
-        std::bernoulli_distribution dist(2.0 / 7.0);
-        return dist(gen) ? Move::COOPERATE : Move::DEFECT;
-    }
-}
-
-inline Move strategy_shubik(uint64_t opp_history, uint64_t my_history) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-
-    if (round == 0) {
-        return Move::COOPERATE;
-    }
-
-    static int grudge_level = 1;
-    static int retaliation_remaining = 0;
-    static bool in_retaliation = false;
-
-    bool last_my_move   = my_history & 1;
-    bool last_opp_move  = opp_history & 1;
-
-    if (in_retaliation) {
-        if (retaliation_remaining > 0) {
-            retaliation_remaining--;
-            if (retaliation_remaining == 0) {
-                in_retaliation = false;
-            }
-            return Move::DEFECT;
-        }
-        in_retaliation = false;
-    }
-
-    if (!in_retaliation && last_opp_move == 1 && last_my_move == 0) {
-        grudge_level++;
-    }
-
-    if (last_opp_move == 1) {
-        in_retaliation = true;
-        retaliation_remaining = grudge_level - 1;
-        return Move::DEFECT;
-    } else {
-        return Move::COOPERATE;
-    }
-}
-
-inline Move strategy_stein_rapoport(uint64_t opp_history, uint64_t my_history = 0) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-
-    if (round < 4) {
-        return Move::COOPERATE;
-    }
-
-    int total_rounds = 0;
-    temp = my_history;
-    while (temp) {
-        ++total_rounds;
-        temp >>= 1;
-    }
-
-    total_rounds = round + 1;
-
-    if (round >= total_rounds - 2) {
-        return Move::DEFECT;
-    }
-
-    bool last_opp_move = opp_history & 1;
-    return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_davis(uint64_t opp_history, uint64_t my_history = 0) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-
-    if (round < 10) {
-        return Move::COOPERATE;
-    }
-
-    if (opp_history != 0) {
-        return Move::DEFECT;
-    } else {
-        return Move::COOPERATE;
-    }
-}
-
-inline Move strategy_graaskamp(uint64_t opp_history, uint64_t my_history) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-    int round_one_indexed = round + 1;
-
-    if (round_one_indexed < 50) {
-        if (round == 0) return Move::COOPERATE;
-        bool last_opp_move = opp_history & 1;
-        return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-    }
-
-    if (round_one_indexed == 51) {
-        return Move::DEFECT;
-    }
-
-    if (round_one_indexed <= 56) {
-        bool last_opp_move = opp_history & 1;
-        return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-    }
-
-    static bool opponent_is_random = false;
-    static int next_random_defection_turn = -1;
-    static int rounds_played_at_last_check = 0;
-
-    int rounds_played = round_one_indexed;
-
-    if (rounds_played - rounds_played_at_last_check >= 50) {
-        int opp_defections = std::bitset<64>(opp_history).count();
-        int opp_cooperations = (rounds_played - 1) - opp_defections;
-
-        double expected = (rounds_played - 1) / 2.0;
-        double chi_square = (std::pow(opp_cooperations - expected, 2) / expected) +
-                            (std::pow(opp_defections - expected, 2) / expected);
-
-        opponent_is_random = (chi_square < 3.841);
-        rounds_played_at_last_check = rounds_played;
-    }
-
-    if (opponent_is_random) {
-        return Move::DEFECT;
-    }
-
-    bool opponent_is_tft = true;
-    bool opponent_is_clone = true;
-
-    if (rounds_played >= 2) {
-        bool my_last_move = my_history & 1;
-        bool opp_last_move = opp_history & 1;
-        if (opp_last_move != my_last_move) {
-            opponent_is_tft = false;
-        }
-    }
-
-    if (opp_history != my_history) {
-        opponent_is_clone = false;
-    }
-
-    if (opponent_is_tft || opponent_is_clone) {
-        bool last_opp_move = opp_history & 1;
-        return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-    }
-
-    if (next_random_defection_turn == -1) {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dist(5, 15);
-        next_random_defection_turn = rounds_played + dist(gen);
-    }
-
-    if (rounds_played == next_random_defection_turn) {
-        static std::random_device rd2;
-        static std::mt19937 gen2(rd2());
-        std::uniform_int_distribution<> dist2(5, 15);
-        next_random_defection_turn = rounds_played + dist2(gen2);
-        return Move::DEFECT;
-    }
-
-    return Move::COOPERATE;
-}
-
-inline Move strategy_first_by_downing(uint64_t opp_history, uint64_t my_history) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        round++;
-        temp >>= 1;
-    }
-
-    static int opponent_coop_after_my_coop = 0;
-    static int opponent_coop_after_my_defect = 0;
-    static int total_my_coop = 0;
-    static int total_my_defect = 0;
-
-    if (round == 0) {
-        return Move::DEFECT;
-    }
-
-    if (round == 1) {
-        bool opp_last_move = opp_history & 1;
-        if (opp_last_move == 0) {
-            opponent_coop_after_my_coop++;
-        }
-        total_my_coop++;
-        total_my_defect++;
-        return Move::DEFECT;
-    }
-
-    bool my_prev_move = (my_history >> 1) & 1;
-    bool opp_prev_move = (opp_history >> 1) & 1;
-    bool opp_last_move = opp_history & 1;
-
-    if (my_prev_move == 0) {
-        total_my_coop++;
-        if (opp_prev_move == 0) opponent_coop_after_my_coop++;
-    }
-    else {
-        total_my_defect++;
-        if (opp_prev_move == 0) opponent_coop_after_my_defect++;
-    }
-
-    double alpha = opponent_coop_after_my_coop / static_cast<double>(total_my_coop);
-    double beta = opponent_coop_after_my_defect / static_cast<double>(total_my_defect);
-
-    const int R = 3;
-    const int P = 1;
-    const int S = 0;
-    const int T = 5;
-
-    double expected_coop = alpha * R + (1 - alpha) * S;
-    double expected_defect = beta * T + (1 - beta) * P;
-
-    if (expected_coop > expected_defect) {
-        return Move::COOPERATE;
-    }
-    else if (expected_coop < expected_defect) {
-        return Move::DEFECT;
-    }
-    else {
-        bool my_last_move = my_history & 1;
-        return my_last_move ? Move::COOPERATE : Move::DEFECT;
-    }
-}
-
-inline Move strategy_feld(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    int rounds = 0;
-    int opp_defects = 0;
-    uint64_t hist = opp_history;
-    while (hist) {
-        if (hist & 1) opp_defects++;
-        rounds++;
-        hist >>= 1;
-    }
-
-    if (rounds == 0) return Move::COOPERATE;
-
-    bool last_opp_defected = (opp_history & 1);
-
-    if (!last_opp_defected) {
-        return Move::COOPERATE;
-    }
-
-    double prob = static_cast<double>(opp_defects) / rounds;
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    std::bernoulli_distribution dist(prob);
-    return dist(gen) ? Move::DEFECT : Move::COOPERATE;
-}
-
-// Dispatcher
-inline Move get_move(StrategyType type, uint64_t opp_history, uint64_t my_history = 0) {
-    switch (type) {
-        case StrategyType::HOLY:        return strategy_holy(opp_history, my_history);
-        case StrategyType::TRAITOR:     return strategy_traitor(opp_history, my_history);
-        case StrategyType::TIT_FOR_TAT: return strategy_tit_for_tat(opp_history, my_history);
-        case StrategyType::Friedman: return strategy_friedman(opp_history, my_history);
-        case StrategyType::Random: return strategy_random(opp_history, my_history);
-        case StrategyType::Joss: return strategy_joss(opp_history, my_history);
-        case StrategyType::TIT_FOR_2TAT: return strategy_tit_for_2tat(opp_history, my_history);
-        case StrategyType::TITS2_FOR_TAT: return strategy_2tits_for_tat(opp_history, my_history);
-        case StrategyType::Pavlov: return strategy_pavlov(opp_history, my_history);
-        case StrategyType::Generous_TIT_FOR_TAT: return strategy_generous_tit_for_tat(opp_history, my_history);
-        case StrategyType::Average_64: return strategy_average64(opp_history, my_history);
-        case StrategyType::Tideman_and_Chieruzzi: return strategy_tideman_chieruzzi(opp_history, my_history);
-        case StrategyType::Nydegger: return strategy_nydegger(opp_history, my_history);
-        case StrategyType::Grogman: return strategy_grofman(opp_history, my_history);
-        case StrategyType::Shubik: return strategy_shubik(opp_history, my_history);
-        case StrategyType::Stein_Rapoport: return strategy_stein_rapoport(opp_history, my_history);
-        case StrategyType::Davis: return strategy_davis(opp_history, my_history);
-        case StrategyType::Graaskamp: return strategy_graaskamp(opp_history, my_history);
-        case StrategyType::First_by_Downing: return strategy_first_by_downing(opp_history, my_history);
-        case StrategyType::Feld: return strategy_feld(opp_history, my_history);
-        default:                        return Move::COOPERATE;
-    }
-}
-
-// Convert strategy type to string
-inline const char* strategy_name(StrategyType type) {
-    switch (type) {
-        case StrategyType::HOLY:        return "HOLY";
-        case StrategyType::TRAITOR:     return "TRAITOR";
-        case StrategyType::TIT_FOR_TAT: return "TIT_FOR_TAT";
-        case StrategyType::Friedman: return "Friedman";
-        case StrategyType::Random: return "Random";
-        case StrategyType::Joss: return "Joss";
-        case StrategyType::TIT_FOR_2TAT: return "TIT_FOR_2TAT";
-        case StrategyType::TITS2_FOR_TAT: return "2TITS_FOR_TAT";
-        case StrategyType::Pavlov: return "Pavlov";
-        case StrategyType::Generous_TIT_FOR_TAT: return "Generous_TIT_FOR_TAT";
-        case StrategyType::Average_64: return "Average_64";
-        case StrategyType::Tideman_and_Chieruzzi: return "Tideman and Chieruzzi";
-        case StrategyType::Nydegger: return "Nydegger";
-        case StrategyType::Grogman: return "Grofman";
-        case StrategyType::Shubik: return "Shubik";
-        case StrategyType::Stein_Rapoport: return "Stein Rapoport";
-        case StrategyType::Davis: return "Davis";
-        case StrategyType::Graaskamp: return "Graaskamp";
-        case StrategyType::First_by_Downing: return "First by Downing";
-        case StrategyType::Feld: return "Feld";
+        case StrategyType::K40R: return "K40R";
+        case StrategyType::K41R: return "K41R";
+        case StrategyType::K42R: return "K42R";
+        case StrategyType::K43R: return "K43R";
+        case StrategyType::K44R: return "K44R";
         default:                        return "?";
     }
 }
