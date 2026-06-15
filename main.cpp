@@ -1,127 +1,131 @@
 #include "strategies.hpp"
 #include <iostream>
 #include <vector>
-#include <array>
-#include <iomanip>
+#include <memory>
 
-static const std::array<std::array<int, 2>, 2> payoff = {{
-    {{3, 0}},
-    {{5, 1}}
-}};
-
-inline int get_payoff(Move a, Move b) {
-    int a_idx = (a == Move::DEFECT) ? 1 : 0;
-    int b_idx = (b == Move::DEFECT) ? 1 : 0;
-    return payoff[a_idx][b_idx];
-}
-
-inline char move_char(Move m) {
-    return (m == Move::COOPERATE) ? 'C' : 'D';
-}
-
-void print_history(uint64_t hist, int rounds) {
-    for (int r = rounds - 1; r >= 0; --r) {
-        bool move = (hist >> r) & 1;
-        std::cout << (move ? 'D' : 'C');
-        if (r > 0) std::cout << " ";
-    }
+static int get_payoff(Move a, Move b) {
+    if (a == Move::COOPERATE && b == Move::COOPERATE) return 3;
+    if (a == Move::COOPERATE && b == Move::DEFECT) return 0;
+    if (a == Move::DEFECT && b == Move::COOPERATE) return 5;
+    return 1;
 }
 
 int main() {
-    std::vector<StrategyType> strategies = {
-        StrategyType::HOLY,
-        StrategyType::TRAITOR,
-        StrategyType::TIT_FOR_TAT,
-        StrategyType::Friedman,
-        StrategyType::Random,
-        StrategyType::Joss,
-        StrategyType::TIT_FOR_2TAT,
-        StrategyType::TITS2_FOR_TAT,
-        StrategyType::Pavlov,
-        StrategyType::Generous_TIT_FOR_TAT,
-        StrategyType::Average_64,
-        StrategyType::Tideman_and_Chieruzzi,
-        StrategyType::Nydegger,
-        StrategyType::Grogman,
-        StrategyType::Shubik,
-        StrategyType::Stein_Rapoport,
-        StrategyType::Davis,
-        StrategyType::Graaskamp,
-        StrategyType::First_by_Downing,
-        StrategyType::Feld,
-        StrategyType::Tullock,
-        StrategyType::GRASR,
-        StrategyType::K31R,
-        StrategyType::K32R,
-        StrategyType::K33R,
-        StrategyType::K35R,
-        StrategyType::K36R,
-        StrategyType::K37R,
-        StrategyType::K38R,
-        StrategyType::K39R,
-        StrategyType::K40R,
-        StrategyType::K41R,
-        StrategyType::K42R,
-        StrategyType::K43R,
-        StrategyType::K44R
-    };
+    std::vector<std::unique_ptr<IStrategy>> strategies;
+
+    strategies.push_back(std::make_unique<Holy>());
+    strategies.push_back(std::make_unique<Traitor>());
+    strategies.push_back(std::make_unique<TitForTat>());
+    strategies.push_back(std::make_unique<Friedman>());
+    strategies.push_back(std::make_unique<RandomStrategy>());
+    strategies.push_back(std::make_unique<Joss>());
+    strategies.push_back(std::make_unique<TitFor2Tat>());
+    strategies.push_back(std::make_unique<TwoTitsForTat>());
+    strategies.push_back(std::make_unique<Pavlov>());
+    strategies.push_back(std::make_unique<GenerousTitForTat>());
+    strategies.push_back(std::make_unique<Average64>());
+    strategies.push_back(std::make_unique<TidemanChieruzzi>());
+    strategies.push_back(std::make_unique<Nydegger>());
+    strategies.push_back(std::make_unique<Grogman>());
+    strategies.push_back(std::make_unique<Shubik>());
+    strategies.push_back(std::make_unique<SteinRapoport>());
+    strategies.push_back(std::make_unique<Davis>());
+    strategies.push_back(std::make_unique<Graaskamp>());
+    strategies.push_back(std::make_unique<FirstByDowning>());
+    strategies.push_back(std::make_unique<Feld>());
+    strategies.push_back(std::make_unique<Tullock>());
+    strategies.push_back(std::make_unique<GRASR>());
+
+    strategies.push_back(std::make_unique<K31R>());
+    strategies.push_back(std::make_unique<K32R>());
+    strategies.push_back(std::make_unique<K33R>());
+    strategies.push_back(std::make_unique<K35R>());
+    strategies.push_back(std::make_unique<K36R>());
+    strategies.push_back(std::make_unique<K37R>());
+    strategies.push_back(std::make_unique<K38R>());
+    strategies.push_back(std::make_unique<K39R>());
+    strategies.push_back(std::make_unique<K40R>());
+    strategies.push_back(std::make_unique<K41R>());
+    strategies.push_back(std::make_unique<K42R>());
+    strategies.push_back(std::make_unique<K43R>());
+    strategies.push_back(std::make_unique<K44R>());
+    strategies.push_back(std::make_unique<K45R>());
+    strategies.push_back(std::make_unique<K46R>());
+    strategies.push_back(std::make_unique<K47R>());
+    strategies.push_back(std::make_unique<K48R>());
+    strategies.push_back(std::make_unique<K49R>());
+    strategies.push_back(std::make_unique<K50R>());
+    strategies.push_back(std::make_unique<K51R>());
+    strategies.push_back(std::make_unique<K52R>());
+    strategies.push_back(std::make_unique<K53R>());
+    strategies.push_back(std::make_unique<K54R>());
+    strategies.push_back(std::make_unique<K55R>());
+    strategies.push_back(std::make_unique<K58R>());
+    strategies.push_back(std::make_unique<K59R>());
+    strategies.push_back(std::make_unique<K60R>());
+    strategies.push_back(std::make_unique<K61R>());
+    strategies.push_back(std::make_unique<K62R>());
+    strategies.push_back(std::make_unique<K63R>());
+    strategies.push_back(std::make_unique<K64R>());
+    strategies.push_back(std::make_unique<K65R>());
+    strategies.push_back(std::make_unique<K66R>());
+    strategies.push_back(std::make_unique<K67R>());
+    strategies.push_back(std::make_unique<K68R>());
+    strategies.push_back(std::make_unique<K69R>());
+    strategies.push_back(std::make_unique<K70R>());
+    strategies.push_back(std::make_unique<K71R>());
+    strategies.push_back(std::make_unique<K72R>());
+    strategies.push_back(std::make_unique<K73R>());
+    strategies.push_back(std::make_unique<K74R>());
+    strategies.push_back(std::make_unique<K74RXX>());
+    strategies.push_back(std::make_unique<K75R>());
+    strategies.push_back(std::make_unique<K76R>());
+    strategies.push_back(std::make_unique<K77R>());
+    strategies.push_back(std::make_unique<K79R>());
+    strategies.push_back(std::make_unique<K80R>());
+    strategies.push_back(std::make_unique<K81R>());
+    strategies.push_back(std::make_unique<K82R>());
+    strategies.push_back(std::make_unique<K83R>());
+    strategies.push_back(std::make_unique<K84R>());
+    strategies.push_back(std::make_unique<K85R>());
+    strategies.push_back(std::make_unique<K86R>());
+    strategies.push_back(std::make_unique<K87R>());
+    strategies.push_back(std::make_unique<K88R>());
+    strategies.push_back(std::make_unique<K89R>());
+    strategies.push_back(std::make_unique<K91R>());
+    strategies.push_back(std::make_unique<KPavlovC>());
+
+
     const int ROUNDS = 500;
-    const int NUM_STRATS = strategies.size();
-    std::cout << "=== AMOUNT OF STRATEGIES ===" << std::endl;
-    std::cout << "There are " << NUM_STRATS << " strategies" << std::endl;
-    std::cout << std::endl;
+    const int NUM = strategies.size();
+    std::vector<int> scores(NUM, 0);
 
-    std::vector<int> scores(NUM_STRATS, 0);
+    for (int i = 0; i < NUM; ++i) {
+        for (int j = 0; j < NUM; ++j) {
+            strategies[i]->reset();
+            strategies[j]->reset();
 
-    std::cout << "=== TOURNAMENT RESULTS ===" << std::endl;
-    std::cout << "Rounds per pair: " << ROUNDS << std::endl;
-    std::cout << std::endl;
-
-    for (int i = 0; i < NUM_STRATS; ++i) {
-        for (int j = 0; j < NUM_STRATS; ++j) {
-            uint64_t hist_i = 0;
-            uint64_t hist_j = 0;
+            uint64_t hist_i = 0, hist_j = 0;
             int score_i = 0, score_j = 0;
 
-            for (int round = 0; round < ROUNDS; ++round) {
-                Move move_i = get_move(strategies[i], hist_i);
-                Move move_j = get_move(strategies[j], hist_j);
+            for (int r = 0; r < ROUNDS; ++r) {
+                Move mi = strategies[i]->getMove(hist_i, hist_j);
+                Move mj = strategies[j]->getMove(hist_j, hist_i);
 
-                score_i += get_payoff(move_i, move_j);
-                score_j += get_payoff(move_j, move_i);
+                score_i += get_payoff(mi, mj);
+                score_j += get_payoff(mj, mi);
 
-                hist_i = (hist_i << 1) | (move_j == Move::DEFECT ? 1ULL : 0ULL);
-                hist_j = (hist_j << 1) | (move_i == Move::DEFECT ? 1ULL : 0ULL);
+                hist_i = (hist_i << 1) | (mj == Move::DEFECT ? 1ULL : 0ULL);
+                hist_j = (hist_j << 1) | (mi == Move::DEFECT ? 1ULL : 0ULL);
             }
-
             scores[i] += score_i;
             scores[j] += score_j;
-
-            std::cout << std::setw(12) << strategy_name(strategies[i]) << " vs "
-                      << std::setw(12) << strategy_name(strategies[j]) << " : "
-                      << std::setw(3) << score_i << " - "
-                      << std::setw(3) << score_j << std::endl;
         }
     }
 
-    std::cout << "\n=== FINAL SCORES ===" << std::endl;
-    for (int i = 0; i < NUM_STRATS; ++i) {
-        std::cout << std::setw(12) << strategy_name(strategies[i]) << " : "
-                  << scores[i] << std::endl;
+    std::cout << "Scores after round-robin tournament (" << ROUNDS << " rounds each):\n";
+    for (int i = 0; i < NUM; ++i) {
+        std::cout << "Strategy " << i << " : " << scores[i] << "\n";
     }
-
-    int max_score = scores[0];
-    int winner_idx = 0;
-    for (int i = 1; i < NUM_STRATS; ++i) {
-        if (scores[i] > max_score) {
-            max_score = scores[i];
-            winner_idx = i;
-        }
-    }
-
-    std::cout << "\n=== WINNER ===" << std::endl;
-    std::cout << strategy_name(strategies[winner_idx]) << " with "
-              << max_score << " points!" << std::endl;
-
     return 0;
 }
