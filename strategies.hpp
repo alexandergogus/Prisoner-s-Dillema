@@ -1,991 +1,816 @@
 #ifndef STRATEGIES_HPP
 #define STRATEGIES_HPP
 
-#include <cstdint>
+#include "istrategy.hpp"
+#include "move.hpp"
 #include <random>
 #include <bitset>
-enum class Move : bool {
-    COOPERATE = false,
-    DEFECT = true
+#include <cmath>
+
+class Holy : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t, uint64_t) override { return Move::COOPERATE; }
 };
 
-enum class StrategyType : uint8_t {
-    HOLY,
-    TRAITOR,
-    TIT_FOR_TAT,
-    Friedman,
-    Random,
-    Joss,
-    TIT_FOR_2TAT,
-    TITS2_FOR_TAT,
-    Pavlov,
-    Generous_TIT_FOR_TAT,
-    Average_64,
-    Tideman_and_Chieruzzi,
-    Nydegger,
-    Grogman,
-    Shubik,
-    Stein_Rapoport,
-    Davis,
-    Graaskamp,
-    First_by_Downing,
-    Feld,
-    Tullock,
-    GRASR,
-    K31R, K32R, K33R, K35R, K36R, K37R, K38R, K39R, K40R,
-    K41R, K42R, K43R, K44R
+class Traitor : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t, uint64_t) override { return Move::DEFECT; }
 };
 
-inline Move strategy_holy(uint64_t /*opp_history*/, uint64_t /*my_history*/ = 0) {
-    return Move::COOPERATE;
-}
-
-inline Move strategy_traitor(uint64_t /*opp_history*/, uint64_t /*my_history*/ = 0) {
-    return Move::DEFECT;
-}
-
-inline Move strategy_tit_for_tat(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    if (opp_history == 0) return Move::COOPERATE;
-    bool last_opp_move = opp_history & 1;
-    return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_friedman(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    static bool ever_defected = false;
-    static int prev_rounds = 0;
-
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    int current_round = rounds + 1;
-
-    if (current_round == 1 || current_round < prev_rounds) {
-        ever_defected = false;
+class TitForTat : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
     }
-    prev_rounds = current_round;
+};
 
-    bool opp_last_defected = (opp_history & 1);
-    if (opp_last_defected) ever_defected = true;
-
-    return ever_defected ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_random(uint64_t /*opp_history*/, uint64_t /*my_history*/ = 0){
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::bernoulli_distribution dist(0.5);
-    bool random_boolean = dist(gen);
-    return random_boolean ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_joss(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    if (opp_history == 0) return Move::COOPERATE;
-
-    bool last_opp_move = opp_history & 1;
-
-    if (last_opp_move) return Move::DEFECT;
-
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::bernoulli_distribution dist(0.1);  // 10% defect
-    return dist(gen) ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_tit_for_2tat(uint64_t opp_history, uint64_t /*my_history*/ = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    bool last_two = opp_history & 3;
-    return (last_two == 3ULL) ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_2tits_for_tat(uint64_t opp_history,  uint64_t /*my_history*/ = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    return ((opp_history & 3) != 0) ? Move::DEFECT : Move::COOPERATE;
-
-}
-
-inline Move strategy_pavlov(uint64_t opp_history,  uint64_t my_history = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    bool last_opp = opp_history & 1;
-    bool last_me = my_history & 1;
-    bool win = (last_me == 0 && last_opp == 0) || (last_me == 1 && last_opp == 0);
-    bool next_move = win ? last_me : !last_me;
-    return next_move ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_generous_tit_for_tat(uint64_t opp_history,  uint64_t /*my_history*/ = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    bool last_opp_move = opp_history & 1;
-    if (last_opp_move == 0) return Move::COOPERATE;
-    else{
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        static std::bernoulli_distribution dist(2.0/3.0);
-        return (dist(gen)) ? Move::DEFECT : Move::COOPERATE;
-
+class Friedman : public IStrategy {
+private:
+    bool ever_defected_ = false;
+    int prev_rounds_ = 0;
+public:
+    void reset() override { ever_defected_ = false; prev_rounds_ = 0; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int current_round = rounds + 1;
+        if (current_round == 1 || current_round < prev_rounds_) ever_defected_ = false;
+        prev_rounds_ = current_round;
+        if (opp_history & 1) ever_defected_ = true;
+        return ever_defected_ ? Move::DEFECT : Move::COOPERATE;
     }
-}
+};
 
-inline Move strategy_average64(uint64_t opp_history,  uint64_t my_history = 0){
-    if (opp_history == 0) return Move::COOPERATE;
-    std::size_t defects = std::bitset<64>(opp_history).count();
-    std::size_t rounds_played = 64 - __builtin_clzll(opp_history);
-    double defect_rate = static_cast<double>(defects)/rounds_played;
-    return (defect_rate <= 0.5) ? Move::COOPERATE : Move::DEFECT;
-}
-
-inline Move strategy_tideman_chieruzzi(uint64_t opp_history, uint64_t my_history = 0) {
-    int opp_defects = std::bitset<64>(opp_history).count();
-    int my_defects = std::bitset<64>(my_history).count();
-
-    int rounds_played = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        rounds_played++;
-        temp >>= 1;
+class RandomStrategy : public IStrategy {
+private:
+    std::mt19937 rng_;
+    std::bernoulli_distribution dist_;
+public:
+    RandomStrategy() : rng_(std::random_device{}()), dist_(0.5) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t, uint64_t) override {
+        return dist_(rng_) ? Move::DEFECT : Move::COOPERATE;
     }
+};
 
-    if (rounds_played == 0) {
-        return Move::DEFECT;
+class Joss : public IStrategy {
+private:
+    std::mt19937 rng_;
+    std::bernoulli_distribution random_defect_;
+public:
+    Joss() : rng_(std::random_device{}()), random_defect_(0.1) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        if (opp_history & 1) return Move::DEFECT;
+        return random_defect_(rng_) ? Move::DEFECT : Move::COOPERATE;
     }
+};
 
-    bool last_opp_defected = (opp_history & 1);
+class TitFor2Tat : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        return ((opp_history & 3) == 3) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
 
-    if (opp_defects >= 5 && my_defects <= opp_defects - 3) {
-        return Move::DEFECT;
+class TwoTitsForTat : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        return (opp_history & 3) ? Move::DEFECT : Move::COOPERATE;
     }
-    int consecutive_coop = 0;
-    uint64_t history = opp_history;
+};
 
-    while (history && !(history & 1)) {
-        consecutive_coop++;
-        history >>= 1;
+class Pavlov : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        bool last_opp = opp_history & 1;
+        bool last_me = my_history & 1;
+        bool win = (last_me == last_opp);
+        bool next = win ? last_me : !last_me;
+        return next ? Move::DEFECT : Move::COOPERATE;
     }
-    if (consecutive_coop >= 3) {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        static std::bernoulli_distribution dist(0.85);
-        return dist(gen) ? Move::COOPERATE : Move::DEFECT;
+};
+
+class GenerousTitForTat : public IStrategy {
+private:
+    std::mt19937 rng_;
+    std::bernoulli_distribution forgive_;
+public:
+    GenerousTitForTat() : rng_(std::random_device{}()), forgive_(2.0/3.0) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        if (!(opp_history & 1)) return Move::COOPERATE;
+        return forgive_(rng_) ? Move::DEFECT : Move::COOPERATE;
     }
-    if (last_opp_defected) {
-        uint64_t prev_two = (opp_history >> 1) & 3;
-        if (prev_two == 0) {
-            return Move::COOPERATE;
+};
+
+class Average64 : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        size_t defects = std::bitset<64>(opp_history).count();
+        size_t rounds = 64 - __builtin_clzll(opp_history);
+        double rate = static_cast<double>(defects) / rounds;
+        return (rate <= 0.5) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class TidemanChieruzzi : public IStrategy {
+private:
+    std::mt19937 rng_;
+    std::bernoulli_distribution coop_prob_;
+public:
+    TidemanChieruzzi() : rng_(std::random_device{}()), coop_prob_(0.85) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int opp_defects = std::bitset<64>(opp_history).count();
+        int my_defects = std::bitset<64>(my_history).count();
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        if (rounds == 0) return Move::DEFECT;
+        bool last_opp = opp_history & 1;
+        if (opp_defects >= 5 && my_defects <= opp_defects - 3) return Move::DEFECT;
+        int consecutive_coop = 0;
+        uint64_t hist = opp_history;
+        while (hist && !(hist & 1)) { ++consecutive_coop; hist >>= 1; }
+        if (consecutive_coop >= 3) {
+            return coop_prob_(rng_) ? Move::COOPERATE : Move::DEFECT;
         }
-        return Move::DEFECT;
-    }
-
-    return Move::COOPERATE;
-}
-
-inline Move strategy_nydegger(uint64_t opp_history, uint64_t my_history) {
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { rounds++; temp >>= 1; }
-
-    if (rounds == 0) return Move::COOPERATE;
-    if (rounds == 1) {
-        bool opp_defected = (opp_history & 1);
-        return opp_defected ? Move::DEFECT : Move::COOPERATE;
-    }
-    if (rounds == 2) {
-        bool opp_last = (opp_history & 1);
-        return opp_last ? Move::DEFECT : Move::COOPERATE;
-    }
-    int opp3 = opp_history & 0b111;
-    int my3  = my_history & 0b111;
-
-    static const uint8_t nydegger_table[64] = {
-        // my3 = 0 (CCC)
-        0, 0, 0, 1,  0, 0, 1, 1,
-        // my3 = 1 (CCD)
-        0, 0, 1, 1,  0, 1, 1, 1,
-        // my3 = 2 (CDC)
-        0, 1, 1, 1,  1, 1, 1, 1,
-        // my3 = 3 (CDD)
-        0, 1, 1, 1,  1, 1, 1, 1,
-        // my3 = 4 (DCC)
-        0, 0, 1, 1,  1, 1, 1, 1,
-        // my3 = 5 (DCD)
-        0, 0, 1, 1,  1, 1, 1, 1,
-        // my3 = 6 (DDC)
-        0, 1, 1, 1,  1, 1, 1, 1,
-        // my3 = 7 (DDD)
-        1, 1, 1, 1,  1, 1, 1, 1
-    };
-
-    int index = (my3 << 3) | opp3;
-    bool next_defect = nydegger_table[index];
-    return next_defect ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_grofman(uint64_t opp_history, uint64_t my_history) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-
-    if (round < 2) {
-        return Move::COOPERATE;
-    }
-
-    if (round < 7) {
-        bool last_opp_move = opp_history & 1;
-        return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-    }
-    bool last_my_move = my_history & 1;
-    bool last_opp_move = opp_history & 1;
-
-    if (last_my_move == last_opp_move) {
-        return Move::COOPERATE;
-    }
-    else {
-        static thread_local std::mt19937 gen(std::random_device{}());
-        std::bernoulli_distribution dist(2.0 / 7.0);
-        return dist(gen) ? Move::COOPERATE : Move::DEFECT;
-    }
-}
-
-inline Move strategy_shubik(uint64_t opp_history, uint64_t my_history) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-
-    if (round == 0) {
-        return Move::COOPERATE;
-    }
-
-    static int grudge_level = 1;
-    static int retaliation_remaining = 0;
-    static bool in_retaliation = false;
-
-    bool last_my_move   = my_history & 1;
-    bool last_opp_move  = opp_history & 1;
-
-    if (in_retaliation) {
-        if (retaliation_remaining > 0) {
-            retaliation_remaining--;
-            if (retaliation_remaining == 0) {
-                in_retaliation = false;
-            }
+        if (last_opp) {
+            uint64_t prev_two = (opp_history >> 1) & 3;
+            if (prev_two == 0) return Move::COOPERATE;
             return Move::DEFECT;
         }
-        in_retaliation = false;
-    }
-
-    if (!in_retaliation && last_opp_move == 1 && last_my_move == 0) {
-        grudge_level++;
-    }
-
-    if (last_opp_move == 1) {
-        in_retaliation = true;
-        retaliation_remaining = grudge_level - 1;
-        return Move::DEFECT;
-    } else {
         return Move::COOPERATE;
     }
-}
+};
 
-inline Move strategy_stein_rapoport(uint64_t opp_history, uint64_t my_history = 0) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
+class Nydegger : public IStrategy {
+private:
+    static const uint8_t table[64];
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        if (rounds == 0) return Move::COOPERATE;
+        if (rounds == 1) return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+        if (rounds == 2) return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+        int opp3 = opp_history & 0b111;
+        int my3 = my_history & 0b111;
+        int index = (my3 << 3) | opp3;
+        return table[index] ? Move::DEFECT : Move::COOPERATE;
     }
+};
+const uint8_t Nydegger::table[64] = {
+    0,0,0,1, 0,0,1,1,
+    0,0,1,1, 0,1,1,1,
+    0,1,1,1, 1,1,1,1,
+    0,1,1,1, 1,1,1,1,
+    0,0,1,1, 1,1,1,1,
+    0,0,1,1, 1,1,1,1,
+    0,1,1,1, 1,1,1,1,
+    1,1,1,1, 1,1,1,1
+};
 
-    if (round < 4) {
-        return Move::COOPERATE;
+class Grogman : public IStrategy {
+private:
+    std::mt19937 rng_;
+    std::bernoulli_distribution forgive_;
+public:
+    Grogman() : rng_(std::random_device{}()), forgive_(2.0/7.0) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round < 2) return Move::COOPERATE;
+        if (round < 7) return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+        bool last_me = my_history & 1;
+        bool last_opp = opp_history & 1;
+        if (last_me == last_opp) return Move::COOPERATE;
+        return forgive_(rng_) ? Move::COOPERATE : Move::DEFECT;
     }
+};
 
-    int total_rounds = 0;
-    temp = my_history;
-    while (temp) {
-        ++total_rounds;
-        temp >>= 1;
+class Shubik : public IStrategy {
+private:
+    int grudge_level_ = 1;
+    int retaliation_remaining_ = 0;
+    bool in_retaliation_ = false;
+public:
+    void reset() override {
+        grudge_level_ = 1;
+        retaliation_remaining_ = 0;
+        in_retaliation_ = false;
     }
-
-    total_rounds = round + 1;
-
-    if (round >= total_rounds - 2) {
-        return Move::DEFECT;
-    }
-
-    bool last_opp_move = opp_history & 1;
-    return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_davis(uint64_t opp_history, uint64_t my_history = 0) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-
-    if (round < 10) {
-        return Move::COOPERATE;
-    }
-
-    if (opp_history != 0) {
-        return Move::DEFECT;
-    } else {
-        return Move::COOPERATE;
-    }
-}
-
-inline Move strategy_graaskamp(uint64_t opp_history, uint64_t my_history) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++round;
-        temp >>= 1;
-    }
-    int round_one_indexed = round + 1;
-
-    if (round_one_indexed < 50) {
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
         if (round == 0) return Move::COOPERATE;
-        bool last_opp_move = opp_history & 1;
-        return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-    }
-
-    if (round_one_indexed == 51) {
-        return Move::DEFECT;
-    }
-
-    if (round_one_indexed <= 56) {
-        bool last_opp_move = opp_history & 1;
-        return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-    }
-
-    static bool opponent_is_random = false;
-    static int next_random_defection_turn = -1;
-    static int rounds_played_at_last_check = 0;
-
-    int rounds_played = round_one_indexed;
-
-    if (rounds_played - rounds_played_at_last_check >= 50) {
-        int opp_defections = std::bitset<64>(opp_history).count();
-        int opp_cooperations = (rounds_played - 1) - opp_defections;
-
-        double expected = (rounds_played - 1) / 2.0;
-        double chi_square = (std::pow(opp_cooperations - expected, 2) / expected) +
-                            (std::pow(opp_defections - expected, 2) / expected);
-
-        opponent_is_random = (chi_square < 3.841);
-        rounds_played_at_last_check = rounds_played;
-    }
-
-    if (opponent_is_random) {
-        return Move::DEFECT;
-    }
-
-    bool opponent_is_tft = true;
-    bool opponent_is_clone = true;
-
-    if (rounds_played >= 2) {
-        bool my_last_move = my_history & 1;
-        bool opp_last_move = opp_history & 1;
-        if (opp_last_move != my_last_move) {
-            opponent_is_tft = false;
+        bool last_me = my_history & 1;
+        bool last_opp = opp_history & 1;
+        if (in_retaliation_) {
+            if (retaliation_remaining_ > 0) {
+                retaliation_remaining_--;
+                if (retaliation_remaining_ == 0) in_retaliation_ = false;
+                return Move::DEFECT;
+            }
+            in_retaliation_ = false;
         }
-    }
-
-    if (opp_history != my_history) {
-        opponent_is_clone = false;
-    }
-
-    if (opponent_is_tft || opponent_is_clone) {
-        bool last_opp_move = opp_history & 1;
-        return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-    }
-
-    if (next_random_defection_turn == -1) {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dist(5, 15);
-        next_random_defection_turn = rounds_played + dist(gen);
-    }
-
-    if (rounds_played == next_random_defection_turn) {
-        static std::random_device rd2;
-        static std::mt19937 gen2(rd2());
-        std::uniform_int_distribution<> dist2(5, 15);
-        next_random_defection_turn = rounds_played + dist2(gen2);
-        return Move::DEFECT;
-    }
-
-    return Move::COOPERATE;
-}
-
-inline Move strategy_first_by_downing(uint64_t opp_history, uint64_t my_history) {
-    int round = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        round++;
-        temp >>= 1;
-    }
-
-    static int opponent_coop_after_my_coop = 0;
-    static int opponent_coop_after_my_defect = 0;
-    static int total_my_coop = 0;
-    static int total_my_defect = 0;
-
-    if (round == 0) {
-        return Move::DEFECT;
-    }
-
-    if (round == 1) {
-        bool opp_last_move = opp_history & 1;
-        if (opp_last_move == 0) {
-            opponent_coop_after_my_coop++;
+        if (!in_retaliation_ && last_opp && !last_me) grudge_level_++;
+        if (last_opp) {
+            in_retaliation_ = true;
+            retaliation_remaining_ = grudge_level_ - 1;
+            return Move::DEFECT;
         }
-        total_my_coop++;
-        total_my_defect++;
-        return Move::DEFECT;
-    }
-
-    bool my_prev_move = (my_history >> 1) & 1;
-    bool opp_prev_move = (opp_history >> 1) & 1;
-
-    if (my_prev_move == 0) {
-        total_my_coop++;
-        if (opp_prev_move == 0) opponent_coop_after_my_coop++;
-    }
-    else {
-        total_my_defect++;
-        if (opp_prev_move == 0) opponent_coop_after_my_defect++;
-    }
-
-    double alpha = opponent_coop_after_my_coop / static_cast<double>(total_my_coop);
-    double beta = opponent_coop_after_my_defect / static_cast<double>(total_my_defect);
-
-    const int R = 3;
-    const int P = 1;
-    const int S = 0;
-    const int T = 5;
-
-    double expected_coop = alpha * R + (1 - alpha) * S;
-    double expected_defect = beta * T + (1 - beta) * P;
-
-    if (expected_coop > expected_defect) {
         return Move::COOPERATE;
     }
-    else if (expected_coop < expected_defect) {
-        return Move::DEFECT;
+};
+
+class SteinRapoport : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round < 4) return Move::COOPERATE;
+        int total_rounds = 0;
+        tmp = my_history;
+        while (tmp) { ++total_rounds; tmp >>= 1; }
+        total_rounds = round + 1;
+        if (round >= total_rounds - 2) return Move::DEFECT;
+        return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
     }
-    else {
-        bool my_last_move = my_history & 1;
-        return my_last_move ? Move::COOPERATE : Move::DEFECT;
+};
+
+class Davis : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round < 10) return Move::COOPERATE;
+        return (opp_history != 0) ? Move::DEFECT : Move::COOPERATE;
     }
-}
+};
 
-inline Move strategy_feld(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    int rounds = 0;
-    int opp_defects = 0;
-    uint64_t hist = opp_history;
-    while (hist) {
-        if (hist & 1) opp_defects++;
-        rounds++;
-        hist >>= 1;
+class Graaskamp : public IStrategy {
+private:
+    bool opponent_is_random_ = false;
+    int next_random_defection_turn_ = -1;
+    int rounds_played_at_last_check_ = 0;
+    std::mt19937 rng_;
+    std::uniform_int_distribution<int> dist_;
+public:
+    Graaskamp() : rng_(std::random_device{}()), dist_(5, 15) {}
+    void reset() override {
+        opponent_is_random_ = false;
+        next_random_defection_turn_ = -1;
+        rounds_played_at_last_check_ = 0;
+        rng_.seed(std::random_device{}());
     }
-
-    if (rounds == 0) return Move::COOPERATE;
-
-    bool last_opp_defected = (opp_history & 1);
-
-    if (!last_opp_defected) {
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        int round_one_indexed = round + 1;
+        if (round_one_indexed < 50) {
+            if (round == 0) return Move::COOPERATE;
+            return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+        if (round_one_indexed == 51) return Move::DEFECT;
+        if (round_one_indexed <= 56) {
+            return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+        if (round_one_indexed - rounds_played_at_last_check_ >= 50) {
+            int opp_defections = std::bitset<64>(opp_history).count();
+            int opp_cooperations = (round_one_indexed - 1) - opp_defections;
+            double expected = (round_one_indexed - 1) / 2.0;
+            double chi_square = (std::pow(opp_cooperations - expected, 2) / expected) +
+                                (std::pow(opp_defections - expected, 2) / expected);
+            opponent_is_random_ = (chi_square < 3.841);
+            rounds_played_at_last_check_ = round_one_indexed;
+        }
+        if (opponent_is_random_) return Move::DEFECT;
+        bool opponent_is_tft = true;
+        if (round_one_indexed >= 2) {
+            bool my_last = my_history & 1;
+            bool opp_last = opp_history & 1;
+            if (opp_last != my_last) opponent_is_tft = false;
+        }
+        bool opponent_is_clone = (opp_history == my_history);
+        if (opponent_is_tft || opponent_is_clone) {
+            return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+        if (next_random_defection_turn_ == -1) {
+            next_random_defection_turn_ = round_one_indexed + dist_(rng_);
+        }
+        if (round_one_indexed == next_random_defection_turn_) {
+            next_random_defection_turn_ = round_one_indexed + dist_(rng_);
+            return Move::DEFECT;
+        }
         return Move::COOPERATE;
     }
+};
 
-    double prob = static_cast<double>(opp_defects) / rounds;
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    std::bernoulli_distribution dist(prob);
-    return dist(gen) ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_tullock(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) {
-        ++rounds;
-        temp >>= 1;
+class FirstByDowning : public IStrategy {
+private:
+    int opponent_coop_after_my_coop_ = 0;
+    int opponent_coop_after_my_defect_ = 0;
+    int total_my_coop_ = 0;
+    int total_my_defect_ = 0;
+public:
+    void reset() override {
+        opponent_coop_after_my_coop_ = 0;
+        opponent_coop_after_my_defect_ = 0;
+        total_my_coop_ = 0;
+        total_my_defect_ = 0;
     }
-
-    if (rounds < 5) {
-        return Move::COOPERATE;
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round == 0) {
+            total_my_coop_ = 1;
+            total_my_defect_ = 1;
+            opponent_coop_after_my_coop_ = 0;
+            opponent_coop_after_my_defect_ = 0;
+            return Move::DEFECT;
+        }
+        if (round == 1) {
+            bool opp_last = opp_history & 1;
+            if (!opp_last) opponent_coop_after_my_coop_++;
+            total_my_coop_++;
+            total_my_defect_++;
+            return Move::DEFECT;
+        }
+        bool my_prev = (my_history >> 1) & 1;
+        bool opp_prev = (opp_history >> 1) & 1;
+        if (!my_prev) {
+            total_my_coop_++;
+            if (!opp_prev) opponent_coop_after_my_coop_++;
+        } else {
+            total_my_defect_++;
+            if (!opp_prev) opponent_coop_after_my_defect_++;
+        }
+        double alpha = opponent_coop_after_my_coop_ / static_cast<double>(total_my_coop_);
+        double beta  = opponent_coop_after_my_defect_ / static_cast<double>(total_my_defect_);
+        const int R = 3, P = 1, S = 0, T = 5;
+        double coop_exp = alpha * R + (1 - alpha) * S;
+        double defect_exp = beta * T + (1 - beta) * P;
+        if (coop_exp > defect_exp) return Move::COOPERATE;
+        if (coop_exp < defect_exp) return Move::DEFECT;
+        bool my_last = my_history & 1;
+        return my_last ? Move::COOPERATE : Move::DEFECT;
     }
-    if (rounds == 5) {
-        return Move::DEFECT;
+};
+
+class Feld : public IStrategy {
+private:
+    std::mt19937 rng_;
+public:
+    Feld() : rng_(std::random_device{}()) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0, opp_defects = 0;
+        uint64_t hist = opp_history;
+        while (hist) {
+            if (hist & 1) opp_defects++;
+            rounds++;
+            hist >>= 1;
+        }
+        if (rounds == 0) return Move::COOPERATE;
+        bool last_opp = opp_history & 1;
+        if (!last_opp) return Move::COOPERATE;
+        double prob = static_cast<double>(opp_defects) / rounds;
+        std::bernoulli_distribution dist(prob);
+        return dist(rng_) ? Move::DEFECT : Move::COOPERATE;
     }
-    bool last_opp_move = opp_history & 1;
-    return last_opp_move ? Move::DEFECT : Move::COOPERATE;
-}
+};
 
-static int opponent_score(uint64_t opp_history, uint64_t my_history) {
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    if (rounds == 0) return 0;
-
-    int score = 0;
-    for (int i = 0; i < rounds; ++i) {
-        int bitpos = rounds - 1 - i;
-        bool opp_move = (opp_history >> bitpos) & 1;
-        bool my_move  = (my_history  >> bitpos) & 1;
-
-        if (!opp_move && !my_move)      score += 3;
-        else if (!opp_move && my_move)  score += 0;
-        else if (opp_move && !my_move)  score += 5;
-        else score += 1;
+class Tullock : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        if (rounds < 5) return Move::COOPERATE;
+        if (rounds == 5) return Move::DEFECT;
+        return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
     }
-    return score;
-}
+};
 
-inline Move strategy_grasr(uint64_t opp_history, uint64_t my_history) {
-    static int nmov[4] = {0};
-    static int mmove = 0;
-    static int igame = 0;
-    static int n = 0;
-    static std::mt19937 rng(std::random_device{}());
-    static std::uniform_real_distribution<double> dist(0.0, 1.0);
-
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    int moven = rounds + 1;
-
-    if (moven == 1) {
+class GRASR : public IStrategy {
+private:
+    int nmov[4] = {0};
+    int mmove = 0;
+    int igame = 0;
+    int n = 0;
+    std::mt19937 rng_;
+    std::uniform_real_distribution<double> dist_;
+public:
+    GRASR() : rng_(std::random_device{}()), dist_(0.0, 1.0) {}
+    void reset() override {
         for (int i = 0; i < 4; ++i) nmov[i] = 0;
         mmove = 0;
         igame = 0;
         n = 0;
-        return Move::COOPERATE;
+        rng_.seed(std::random_device{}());
     }
-
-    if (moven < 51) {
-        bool last_opp = opp_history & 1;
-        return last_opp ? Move::DEFECT : Move::COOPERATE;
+    int opponent_score(uint64_t opp_history, uint64_t my_history) {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        if (rounds == 0) return 0;
+        int score = 0;
+        for (int i = 0; i < rounds; ++i) {
+            int bitpos = rounds - 1 - i;
+            bool opp = (opp_history >> bitpos) & 1;
+            bool me  = (my_history  >> bitpos) & 1;
+            if (!opp && !me)      score += 3;
+            else if (!opp && me)  score += 0;
+            else if (opp && !me)  score += 5;
+            else                  score += 1;
+        }
+        return score;
     }
-
-    if (moven == 51) {
-        return Move::DEFECT;
-    }
-
-    if (moven >= 52 && moven <= 56) {
-        if (moven == 52) {
-            bool last_opp = opp_history & 1;
-            return last_opp ? Move::DEFECT : Move::COOPERATE;
-        } else {
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int moven = rounds + 1;
+        if (moven == 1) return Move::COOPERATE;
+        if (moven < 51) return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+        if (moven == 51) return Move::DEFECT;
+        if (moven >= 52 && moven <= 56) {
+            if (moven == 52) return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
             int idx = moven - 52;
-            bool last_opp = opp_history & 1;
-            int jpick = last_opp ? 1 : 0;
+            int jpick = (opp_history & 1) ? 1 : 0;
             nmov[idx-1] = mmove + jpick;
             mmove = (jpick == 0) ? 2 : 4;
-            return last_opp ? Move::DEFECT : Move::COOPERATE;
+            return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
         }
-    }
-
-    if (moven == 57) {
-        int jscor = opponent_score(opp_history, my_history);
-        if (jscor >= 135) {
-            int j = nmov[1];
-            if (j == 1 || j == 2) {
-                igame = 1;
-                n = static_cast<int>(dist(rng) * 10.0 + 5.0);
-                return Move::COOPERATE;
-            }
-            else if (j == 3) {
-                if (nmov[0] == 2 && nmov[2] == 4 && nmov[3] == 2) {
-                    igame = 4;
-                    return Move::COOPERATE;
-                } else {
+        if (moven == 57) {
+            int jscor = opponent_score(opp_history, my_history);
+            if (jscor >= 135) {
+                int j = nmov[1];
+                if (j == 1 || j == 2) {
                     igame = 1;
-                    n = static_cast<int>(dist(rng) * 10.0 + 5.0);
+                    n = static_cast<int>(dist_(rng_) * 10.0 + 5.0);
                     return Move::COOPERATE;
                 }
-            }
-            else if (j == 4) {
-                if (nmov[0] == 3 && nmov[2] == 3) {
-                    igame = 2;
-                    return Move::COOPERATE;
-                } else {
-                    igame = 1;
-                    n = static_cast<int>(dist(rng) * 10.0 + 5.0);
+                else if (j == 3) {
+                    if (nmov[0] == 2 && nmov[2] == 4 && nmov[3] == 2) igame = 4;
+                    else { igame = 1; n = static_cast<int>(dist_(rng_) * 10.0 + 5.0); }
                     return Move::COOPERATE;
                 }
-            }
-            else if (j == 5) {
-                if (nmov[0] == 5 && nmov[2] == 5) {
-                    igame = 2;
-                    return Move::COOPERATE;
-                } else {
-                    igame = 1;
-                    n = static_cast<int>(dist(rng) * 10.0 + 5.0);
+                else if (j == 4) {
+                    if (nmov[0] == 3 && nmov[2] == 3) igame = 2;
+                    else { igame = 1; n = static_cast<int>(dist_(rng_) * 10.0 + 5.0); }
                     return Move::COOPERATE;
                 }
-            }
-        } else {
-            igame = 3;
-            return Move::DEFECT;
-        }
-    }
-
-    switch (igame) {
-        case 1:
-            if (n <= 0) {
-                n = static_cast<int>(dist(rng) * 10.0 + 5.0);
-                return Move::DEFECT;
+                else if (j == 5) {
+                    if (nmov[0] == 5 && nmov[2] == 5) igame = 2;
+                    else { igame = 1; n = static_cast<int>(dist_(rng_) * 10.0 + 5.0); }
+                    return Move::COOPERATE;
+                }
             } else {
-                n--;
-                bool last_opp = opp_history & 1;
-                return last_opp ? Move::DEFECT : Move::COOPERATE;
+                igame = 3;
+                return Move::DEFECT;
             }
-        case 2:
-            {
-                bool last_opp = opp_history & 1;
-                return last_opp ? Move::DEFECT : Move::COOPERATE;
-            }
-        case 3:
-            return Move::DEFECT;
-        case 4:
-            if (moven >= 118) igame = 2;
-            return Move::COOPERATE;
-        default:
-            return Move::COOPERATE;
+        }
+        switch (igame) {
+            case 1:
+                if (n <= 0) {
+                    n = static_cast<int>(dist_(rng_) * 10.0 + 5.0);
+                    return Move::DEFECT;
+                } else {
+                    n--;
+                    return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+                }
+            case 2:
+                return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
+            case 3:
+                return Move::DEFECT;
+            case 4:
+                if (moven >= 118) igame = 2;
+                return Move::COOPERATE;
+            default:
+                return Move::COOPERATE;
+        }
     }
-}
+};
 
-inline Move strategy_k31r(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    if (opp_history == 0) return Move::COOPERATE;
-
-    int rounds = 0;
-    int defects = 0;
-    uint64_t hist = opp_history;
-    while (hist) {
-        if (hist & 1) ++defects;
-        ++rounds;
-        hist >>= 1;
+class K31R : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        int rounds = 0, defects = 0;
+        uint64_t hist = opp_history;
+        while (hist) {
+            if (hist & 1) ++defects;
+            ++rounds;
+            hist >>= 1;
+        }
+        return (defects * 2 < rounds) ? Move::COOPERATE : Move::DEFECT;
     }
+};
 
-    if (defects * 2 < rounds)
-        return Move::COOPERATE;
-    else
-        return Move::DEFECT;
-}
-
-inline Move strategy_k32r(uint64_t opp_history, uint64_t my_history) {
-    static int C1 = 0, C2 = 0, C3 = 0, C4 = 0;
-    static int J2 = 0, J1 = 0, I2 = 0, I1 = 0;
-    static std::mt19937 rng(std::random_device{}());
-    static std::uniform_real_distribution<double> dist(0.0, 1.0);
-
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    int M = rounds + 1;
-    int move = 0;
-
-    if (M == 1) {
+class K32R : public IStrategy {
+private:
+    int C1 = 0, C2 = 0, C3 = 0, C4 = 0;
+    int J2 = 0, J1 = 0, I2 = 0, I1 = 0;
+    std::mt19937 rng_;
+    std::uniform_real_distribution<double> dist_;
+public:
+    K32R() : rng_(std::random_device{}()), dist_(0.0, 1.0) {}
+    void reset() override {
         C1 = C2 = C3 = C4 = 0;
         J2 = J1 = I2 = I1 = 0;
-        return Move::COOPERATE;
+        rng_.seed(std::random_device{}());
     }
-
-    int J = (opp_history & 1) ? 1 : 0;
-
-    if (M > 2) {
-        I2 = (my_history >> 1) & 1;
-        I1 = my_history & 1;
-
-        if (I2 == 0) {
-            if (J == 0) C3++; else C4++;
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int M = rounds + 1;
+        int move = 0;
+        if (M == 1) return Move::COOPERATE;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M > 2) {
+            I2 = (my_history >> 1) & 1;
+            I1 = my_history & 1;
+            if (I2 == 0) { if (J == 0) C3++; else C4++; }
+            else { if (J == 0) C1++; else C2++; }
+        }
+        if (M >= 27) {
+            int total_def_resp = C1 + C2;
+            int total_coop_resp = C3 + C4;
+            double threshold1 = (total_def_resp - 1.5 * sqrt(total_def_resp)) / 2.0;
+            double threshold2 = (total_coop_resp - 1.5 * sqrt(total_coop_resp)) / 2.0;
+            if (!(C1 < threshold1) && !(C4 < threshold2)) {
+                move = 1;
+                goto update;
+            }
+        }
+        if (M >= 3) J1 = (opp_history >> 1) & 1;
+        if (M >= 4) J2 = (opp_history >> 2) & 1;
+        if (J1 == J) {
+            if (J2 == J1) move = J;
+            else {
+                double P = 0.9;
+                move = J;
+                if (dist_(rng_) >= P) move = 1 - J;
+            }
         } else {
-            if (J == 0) C1++; else C2++;
-        }
-    }
-
-    if (M >= 27) {
-        int total_def_resp = C1 + C2;
-        int total_coop_resp = C3 + C4;
-        double threshold1 = (total_def_resp - 1.5 * sqrt(total_def_resp)) / 2.0;
-        double threshold2 = (total_coop_resp - 1.5 * sqrt(total_coop_resp)) / 2.0;
-        if (!(C1 < threshold1) && !(C4 < threshold2)) {
-            move = 1;
-            goto update;
-        }
-    }
-
-    if (M >= 3) J1 = (opp_history >> 1) & 1;
-    if (M >= 4) J2 = (opp_history >> 2) & 1;
-
-    if (J1 == J) {
-        if (J2 == J1) {
+            double P = (J == 1) ? 0.6 : 0.7;
             move = J;
+            if (dist_(rng_) >= P) move = 1 - J;
+        }
+    update:
+        J2 = J1;
+        J1 = J;
+        I2 = I1;
+        I1 = move;
+        return (move == 0) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class K33R : public IStrategy {
+private:
+    double coop[4] = {0.0};
+    double count[4] = {0.0};
+    int last1 = 1;
+    int last2 = 1;
+    bool twin = true;
+public:
+    void reset() override {
+        for (int i = 0; i < 4; ++i) { coop[i] = 0.0; count[i] = 0.0; }
+        last1 = 1; last2 = 1; twin = true;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int M = rounds + 1;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) return Move::COOPERATE;
+        if (M > 2) {
+            int idx_prev = 2 * last2 + last1 + 1;
+            int idx0 = idx_prev - 1;
+            coop[idx0] += (1 - J);
+            count[idx0] += 1.0;
+        }
+        if (J != last1) twin = false;
+        int idx_cur = 2 * last2 + last1 + 1;
+        int move = 0;
+        if (M <= 22) {
+            move = (idx_cur == 1 || idx_cur == 2) ? 1 : 0;
         } else {
-            double P = 0.9;
-            move = J;
-            if (dist(rng) >= P) move = 1 - J;
+            if (twin) move = 0;
+            else {
+                double p[4];
+                for (int i = 0; i < 4; ++i) p[i] = (count[i] > 0.0) ? (coop[i] / count[i]) : 0.0;
+                const double CONST[6] = {0.0, 4.0, 6.0, 6.0, 8.0, 12.0};
+                const double COEFF[6][4] = {
+                    {36.0, 0.0, 0.0, 0.0},
+                    {16.0, 12.0, 12.0, 0.0},
+                    {0.0, 18.0, 24.0, 0.0},
+                    {12.0, 12.0, 9.0, 9.0},
+                    {0.0, 16.0, 16.0, 12.0},
+                    {0.0, 0.0, 0.0, 48.0}
+                };
+                double best = -1e9;
+                int best_policy = 0;
+                for (int pol = 0; pol < 6; ++pol) {
+                    double sum = CONST[pol];
+                    for (int hist = 0; hist < 4; ++hist) sum += COEFF[pol][hist] * p[hist];
+                    if (sum > best) { best = sum; best_policy = pol; }
+                }
+                switch (best_policy) {
+                    case 0: move = 0; break;
+                    case 1: move = (idx_cur == 1) ? 1 : 0; break;
+                    case 2: move = (idx_cur == 1 || idx_cur == 3) ? 1 : 0; break;
+                    case 3: move = (idx_cur == 1 || idx_cur == 2) ? 1 : 0; break;
+                    case 4: move = (idx_cur == 1 || idx_cur == 2 || idx_cur == 3) ? 1 : 0; break;
+                    case 5: move = 1; break;
+                    default: move = 0;
+                }
+            }
         }
-    } else {
-        double P = (J == 1) ? 0.6 : 0.7;
-        move = J;
-        if (dist(rng) >= P) move = 1 - J;
+        last2 = last1;
+        last1 = move;
+        return (move == 0) ? Move::COOPERATE : Move::DEFECT;
     }
+};
 
-update:
-    J2 = J1;
-    J1 = J;
-    I2 = I1;
-    I1 = move;
-
-    return (move == 0) ? Move::COOPERATE : Move::DEFECT;
-}
-
-inline Move strategy_k33r(uint64_t opp_history, uint64_t my_history) {
-    static double coop[4] = {0.0};
-    static double count[4] = {0.0};
-    static int last1 = 1;
-    static int last2 = 1;
-    static bool twin = true;
-
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    int M = rounds + 1;
-    int J = (opp_history & 1) ? 1 : 0;
-
-    if (M == 1) {
-        for (int i = 0; i < 4; ++i) {
-            coop[i] = 0.0;
-            count[i] = 0.0;
-        }
-        last1 = 1;
-        last2 = 1;
-        twin = true;
-        return Move::COOPERATE;
+class K35R : public IStrategy {
+private:
+    double flack = 0.0;
+    std::mt19937 rng_;
+    std::uniform_real_distribution<double> dist_;
+public:
+    K35R() : rng_(std::random_device{}()), dist_(0.0, 1.0) {}
+    void reset() override { flack = 0.0; rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int M = rounds + 1;
+        if (M == 1) return Move::COOPERATE;
+        int J = (opp_history & 1) ? 1 : 0;
+        flack = (flack + J) * 0.5;
+        double R = dist_(rng_);
+        return (flack > R) ? Move::DEFECT : Move::COOPERATE;
     }
+};
 
-    if (M > 2) {
-        int idx_prev = 2 * last2 + last1 + 1;
-        int idx0 = idx_prev - 1;
-        coop[idx0] += (1 - J);
-        count[idx0] += 1.0;
+class K36R : public IStrategy {
+private:
+    std::mt19937 rng_;
+    std::uniform_real_distribution<double> dist_;
+public:
+    K36R() : rng_(std::random_device{}()), dist_(0.0, 1.0) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int M = rounds + 1;
+        double probc;
+        if (M < 100) probc = 0.1;
+        else if (M < 200) probc = 0.05;
+        else if (M < 300) probc = 0.15;
+        else probc = 0.0;
+        double R = dist_(rng_);
+        return (R < probc) ? Move::COOPERATE : Move::DEFECT;
     }
+};
 
-    if (J != last1) twin = false;
+class K37R : public IStrategy {
+private:
+    int nd = 0;
+public:
+    void reset() override { nd = 0; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int M = rounds + 1;
+        if (M == 1) return Move::COOPERATE;
+        int J = (opp_history & 1) ? 1 : 0;
+        nd += J;
+        return (5 * nd > M) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
 
-    int idx_cur = 2 * last2 + last1 + 1;
+class K38R : public IStrategy {
+private:
     int move = 0;
-
-    if (M <= 22) {
-        move = (idx_cur == 1 || idx_cur == 2) ? 1 : 0;
-    }
-    else {
-        if (twin) {
-            move = 0;
-        } else {
-            double p[4];
-            for (int i = 0; i < 4; ++i) {
-                p[i] = (count[i] > 0.0) ? (coop[i] / count[i]) : 0.0;
-            }
-
-            const double CONST[6] = {0.0, 4.0, 6.0, 6.0, 8.0, 12.0};
-            const double COEFF[6][4] = {
-                {36.0,  0.0,  0.0,  0.0},
-                {16.0, 12.0, 12.0,  0.0},
-                { 0.0, 18.0, 24.0,  0.0},
-                {12.0, 12.0,  9.0,  9.0},
-                { 0.0, 16.0, 16.0, 12.0},
-                { 0.0,  0.0,  0.0, 48.0}
-            };
-
-            double best = -1e9;
-            int best_policy = 0;
-            for (int pol = 0; pol < 6; ++pol) {
-                double sum = CONST[pol];
-                for (int hist = 0; hist < 4; ++hist) {
-                    sum += COEFF[pol][hist] * p[hist];
-                }
-                if (sum > best) {
-                    best = sum;
-                    best_policy = pol;
-                }
-            }
-
-            switch (best_policy) {
-                case 0: move = 0; break;
-                case 1: move = (idx_cur == 1) ? 1 : 0; break;
-                case 2: move = (idx_cur == 1 || idx_cur == 3) ? 1 : 0; break;
-                case 3: move = (idx_cur == 1 || idx_cur == 2) ? 1 : 0; break;
-                case 4: move = (idx_cur == 1 || idx_cur == 2 || idx_cur == 3) ? 1 : 0; break;
-                case 5: move = 1; break;
-                default: move = 0;
-            }
+    int jhis = 0;
+public:
+    void reset() override { move = 0; jhis = 0; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int M = rounds + 1;
+        if (M == 1) return Move::COOPERATE;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (move == 0) {
+            jhis = ((jhis & 3) << 1) | J;
+            if (jhis == 0b111) move = 1;
         }
+        return (move == 1) ? Move::DEFECT : Move::COOPERATE;
     }
+};
 
-    last2 = last1;
-    last1 = move;
-    return (move == 0) ? Move::COOPERATE : Move::DEFECT;
-}
-
-inline Move strategy_k35r(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    static double flack = 0.0;
-    static std::mt19937 rng(std::random_device{}());
-    static std::uniform_real_distribution<double> dist(0.0, 1.0);
-
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    int M = rounds + 1;
-
-    if (M == 1) {
-        flack = 0.0;
-        return Move::COOPERATE;
-    }
-
-    int J = (opp_history & 1) ? 1 : 0;
-    flack = (flack + J) * 0.5;
-
-    double R = dist(rng);
-    return (flack > R) ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_k36r(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    static std::mt19937 rng(std::random_device{}());
-    static std::uniform_real_distribution<double> dist(0.0, 1.0);
-
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    int M = rounds + 1;
-
-    double probc;
-    if (M < 100)          probc = 0.1;
-    else if (M < 200)     probc = 0.05;
-    else if (M < 300)     probc = 0.15;
-    else                  probc = 0.0;
-
-    double R = dist(rng);
-    return (R < probc) ? Move::COOPERATE : Move::DEFECT;
-}
-
-inline Move strategy_k37r(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    static int nd = 0;
-
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    int M = rounds + 1;
-
-    if (M == 1) {
-        nd = 0;
-        return Move::COOPERATE;
-    }
-
-    int J = (opp_history & 1) ? 1 : 0;
-    nd += J;
-
-    return (5 * nd > M) ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_k38r(uint64_t opp_history, uint64_t /*my_history*/ = 0) {
-    static int move = 0;
-    static int jhis = 0;
-
-    int rounds = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++rounds; temp >>= 1; }
-    int M = rounds + 1;
-
-    if (M == 1) {
-        move = 0;
-        jhis = 0;
-        return Move::COOPERATE;
-    }
-
-    int J = (opp_history & 1) ? 1 : 0;
-
-    if (move == 0) {
-        jhis = ((jhis & 3) << 1) | J;
-        if (jhis == 0b111) {
-            move = 1;
-        }
-    }
-
-    return (move == 1) ? Move::DEFECT : Move::COOPERATE;
-}
-
-inline Move strategy_k39r(uint64_t opp_history, uint64_t my_history) {
-    static int STEP = 1, SUBSTP = 1;
-    static int BOTHD = 0, TITCNT = 0, TATCNT = 0;
-    static int EVIL = 0, N = 1, F = 0;
-    static int TOTK = 0, OLDMOV = 0, COUNT = 0, VOLDMV = 0;
-    static int OK[4] = {0, 0, 0, 0};
-
-    int M = 0;
-    uint64_t temp = opp_history;
-    while (temp) { ++M; temp >>= 1; }
-    ++M;
-
-    if (M == 1) {
+class K39R : public IStrategy {
+private:
+    int STEP = 1, SUBSTP = 1;
+    int BOTHD = 0, TITCNT = 0, TATCNT = 0;
+    int EVIL = 0, N = 1, F = 0;
+    int TOTK = 0, OLDMOV = 0, COUNT = 0, VOLDMV = 0;
+    int OK[4] = {0,0,0,0};
+public:
+    void reset() override {
         STEP = 1; SUBSTP = 1; BOTHD = 0; TITCNT = 0; TATCNT = 0;
         EVIL = 0; N = 1; F = 0; TOTK = 0; OLDMOV = 0; COUNT = 0; VOLDMV = 0;
         for (int i = 0; i < 4; ++i) OK[i] = 0;
-        return Move::COOPERATE;
     }
-
-    int J = (opp_history & 1) ? 1 : 0;
-    int prev_own = (my_history & 1) ? 1 : 0;
-
-    int K = 0;
-    uint64_t o_hist = opp_history;
-    uint64_t m_hist = my_history;
-    while (o_hist || m_hist) {
-        bool opp = (o_hist & 1);
-        bool me  = (m_hist & 1);
-        if (!me && !opp)      K += 3;
-        else if (!me && opp)  K += 0;
-        else if (me && !opp)  K += 5;
-        else                  K += 1;
-        o_hist >>= 1;
-        m_hist >>= 1;
+    int compute_K(uint64_t opp_history, uint64_t my_history) {
+        int K = 0;
+        uint64_t o_hist = opp_history;
+        uint64_t m_hist = my_history;
+        while (o_hist || m_hist) {
+            bool opp = (o_hist & 1);
+            bool me  = (m_hist & 1);
+            if (!me && !opp)      K += 3;
+            else if (!me && opp)  K += 0;
+            else if (me && !opp)  K += 5;
+            else                  K += 1;
+            o_hist >>= 1;
+            m_hist >>= 1;
+        }
+        return K;
     }
-
-    if (prev_own + J == 2) BOTHD++;
-    if (prev_own + J < 2) BOTHD = 0;
-    COUNT--;
-    int move = 0;
-    VOLDMV = OLDMOV;
-    OLDMOV = J;
-    if (J == 1) TATCNT++;
-    if (EVIL == 0 && J == 1) EVIL = 1;
-
-    bool done = false;
-    while (!done) {
-        switch (STEP) {
-            case 1:
-                switch (SUBSTP) {
-                    case 1:
-                        COUNT = 10;
-                        TATCNT = 0;
-                        TITCNT = 0;
-                        SUBSTP = 2;
-                        break;
-                    case 2:
-                        if ((VOLDMV + OLDMOV) == 2) move = 1;
-                        TITCNT += move;
-                        if (COUNT == 0) SUBSTP = 3;
-                        done = true;
-                        break;
-                    case 3:
-                        {
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        if (M == 1) return Move::COOPERATE;
+        int J = (opp_history & 1) ? 1 : 0;
+        int prev_own = (my_history & 1) ? 1 : 0;
+        int K = compute_K(opp_history, my_history);
+        if (prev_own + J == 2) BOTHD++;
+        if (prev_own + J < 2) BOTHD = 0;
+        COUNT--;
+        int move = 0;
+        VOLDMV = OLDMOV;
+        OLDMOV = J;
+        if (J == 1) TATCNT++;
+        if (EVIL == 0 && J == 1) EVIL = 1;
+        bool done = false;
+        while (!done) {
+            switch (STEP) {
+                case 1:
+                    switch (SUBSTP) {
+                        case 1:
+                            COUNT = 10;
+                            TATCNT = 0;
+                            TITCNT = 0;
+                            SUBSTP = 2;
+                            break;
+                        case 2:
+                            if ((VOLDMV + OLDMOV) == 2) move = 1;
+                            TITCNT += move;
+                            if (COUNT == 0) SUBSTP = 3;
+                            done = true;
+                            break;
+                        case 3: {
                             int OLDSTP = STEP;
                             OK[STEP] = K - TOTK;
                             TOTK = K;
@@ -1006,25 +831,23 @@ inline Move strategy_k39r(uint64_t opp_history, uint64_t my_history) {
                             }
                             continue;
                         }
-                }
-                break;
-
-            case 2:
-                switch (SUBSTP) {
-                    case 1:
-                        COUNT = 10;
-                        TATCNT = 0;
-                        TITCNT = 0;
-                        SUBSTP = 2;
-                        break;
-                    case 2:
-                        if (OLDMOV == 1) move = 1;
-                        TITCNT += move;
-                        if (COUNT == 0) SUBSTP = 3;
-                        done = true;
-                        break;
-                    case 3:
-                        {
+                    }
+                    break;
+                case 2:
+                    switch (SUBSTP) {
+                        case 1:
+                            COUNT = 10;
+                            TATCNT = 0;
+                            TITCNT = 0;
+                            SUBSTP = 2;
+                            break;
+                        case 2:
+                            if (OLDMOV == 1) move = 1;
+                            TITCNT += move;
+                            if (COUNT == 0) SUBSTP = 3;
+                            done = true;
+                            break;
+                        case 3: {
                             int OLDSTP = STEP;
                             OK[STEP] = K - TOTK;
                             TOTK = K;
@@ -1045,25 +868,23 @@ inline Move strategy_k39r(uint64_t opp_history, uint64_t my_history) {
                             }
                             continue;
                         }
-                }
-                break;
-
-            case 3:
-                switch (SUBSTP) {
-                    case 1:
-                        COUNT = 10;
-                        TATCNT = 0;
-                        TITCNT = 0;
-                        SUBSTP = 2;
-                        break;
-                    case 2:
-                        move = 1;
-                        TITCNT++;
-                        if (COUNT == 0) SUBSTP = 3;
-                        done = true;
-                        break;
-                    case 3:
-                        {
+                    }
+                    break;
+                case 3:
+                    switch (SUBSTP) {
+                        case 1:
+                            COUNT = 10;
+                            TATCNT = 0;
+                            TITCNT = 0;
+                            SUBSTP = 2;
+                            break;
+                        case 2:
+                            move = 1;
+                            TITCNT++;
+                            if (COUNT == 0) SUBSTP = 3;
+                            done = true;
+                            break;
+                        case 3: {
                             int OLDSTP = STEP;
                             OK[STEP] = K - TOTK;
                             TOTK = K;
@@ -1084,519 +905,2645 @@ inline Move strategy_k39r(uint64_t opp_history, uint64_t my_history) {
                             }
                             continue;
                         }
-                }
-                break;
-
-            case 4:
-                switch (SUBSTP) {
-                    case 1:
-                        SUBSTP = 2;
-                        move = 1;
-                        COUNT = N;
-                        TATCNT = 0;
-                        done = true;
-                        break;
-                    case 2:
-                        if (COUNT == 0) SUBSTP = 3;
-                        done = true;
-                        break;
-                    case 3:
-                        if (TATCNT != 0) {
-                            if (F == 0) {
-                                SUBSTP = 4;
-                                if (J == 1) N++;
-                                TATCNT = J;
-                                done = true;
+                    }
+                    break;
+                case 4:
+                    switch (SUBSTP) {
+                        case 1:
+                            SUBSTP = 2;
+                            move = 1;
+                            COUNT = N;
+                            TATCNT = 0;
+                            done = true;
+                            break;
+                        case 2:
+                            if (COUNT == 0) SUBSTP = 3;
+                            done = true;
+                            break;
+                        case 3:
+                            if (TATCNT != 0) {
+                                if (F == 0) {
+                                    SUBSTP = 4;
+                                    if (J == 1) N++;
+                                    TATCNT = J;
+                                    done = true;
+                                } else {
+                                    N++;
+                                    SUBSTP = 1;
+                                    STEP = 1;
+                                    continue;
+                                }
                             } else {
-                                N++;
+                                F = 1;
                                 SUBSTP = 1;
-                                STEP = 1;
                                 continue;
                             }
-                        } else {
-                            F = 1;
-                            SUBSTP = 1;
-                            continue;
-                        }
-                        break;
-                    case 4:
-                        if (TATCNT <= 4) {
-                            done = true;
-                        } else {
-                            SUBSTP = 1;
-                            STEP = 1;
-                            continue;
-                        }
-                        break;
-                }
-                break;
-
-            case 5:
-                switch (SUBSTP) {
-                    case 1:
-                        COUNT = 5;
-                        SUBSTP = 2;
-                    case 2:
-                        if (COUNT != 0) {
-                            done = true;
-                        } else {
-                            SUBSTP = 1;
-                            STEP = 1;
-                            continue;
-                        }
-                        break;
-                }
-                break;
+                            break;
+                        case 4:
+                            if (TATCNT <= 4) done = true;
+                            else { SUBSTP = 1; STEP = 1; continue; }
+                            break;
+                    }
+                    break;
+                case 5:
+                    switch (SUBSTP) {
+                        case 1:
+                            COUNT = 5;
+                            SUBSTP = 2;
+                        case 2:
+                            if (COUNT != 0) done = true;
+                            else { SUBSTP = 1; STEP = 1; continue; }
+                            break;
+                    }
+                    break;
+            }
         }
+        return (move == 1) ? Move::DEFECT : Move::COOPERATE;
     }
+};
 
-    return (move == 1) ? Move::DEFECT : Move::COOPERATE;
-}
+class K40R : public IStrategy {
+private:
+    int S = 3;
+    int W = 0;
+    double Q = 0.8;
+    std::mt19937 rng_;
+    std::uniform_real_distribution<double> dist_;
+public:
+    K40R() : rng_(std::random_device{}()), dist_(0.0, 1.0) {}
+    void reset() override { S = 3; W = 0; Q = 0.8; rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        double R = dist_(rng_);
+        int result = JA;
+        if (M != 1) goto label505;
+        S = 3; W = 0; Q = 0.8;
+    label505:
+        S = S + 1;
+        if (J != 1) goto label510;
+        W = W + 1;
+        Q = Q / 2.0;
+    label510:
+        if (M >= 3) goto label520;
+        result = 0;
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    label520:
+        if (J == 1) goto label522;
+        goto label530;
+    label522:
+        W = W + 1;
+        if (W > 2 && (W % 3 == 0 || (W - 1) % 3 == 0)) goto label901;
+        goto label550;
+    label901:
+        S = 1;
+        Q = Q / 2.0;
+        goto label580;
+    label530:
+        goto label580;
+    label550:
+        if (R >= Q) goto label560;
+        result = 0;
+        Q = Q / 2.0;
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    label560:
+        Q = Q / 2.0;
+        result = 1;
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    label580:
+        if (S == 1 || S == 2) goto label1000;
+        if (W > 2 && (W % 3 == 0 || (W - 1) % 3 == 0)) goto label901;
+        result = 0;
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    label1000:
+        result = 1;
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
 
-inline Move strategy_k40r(uint64_t opp_history, uint64_t my_history) {
-    static int S;
-    static int W;
-    static double Q;
-
-    int M = 0;
-    uint64_t tmp = opp_history;
-    while (tmp) { ++M; tmp >>= 1; }
-    ++M;
-
-    int J = (opp_history & 1) ? 1 : 0;
-    int JA = (my_history & 1) ? 1 : 0;
-
-    static thread_local std::mt19937 rng(std::random_device{}());
-    static thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
-    double R = dist(rng);
-
-    int result = JA;
-
-    if (M != 1) goto label505;
-    S = 3;
-    W = 0;
-    Q = 0.8;
-
-label505:
-    S = S + 1;
-    if (J != 1) goto label510;
-    W = W + 1;
-    Q = Q / 2.0;
-
-label510:
-    if (M >= 3) goto label520;
-    result = 0;
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
-
-label520:
-    if (J == 1) goto label522;
-    goto label530;
-
-label522:
-    W = W + 1;
-    if (W > 2 && (W % 3 == 0 || (W - 1) % 3 == 0)) goto label901;
-    goto label550;
-
-label901:
-    S = 1;
-    Q = Q / 2.0;
-    goto label580;
-
-label530:
-    goto label580;
-
-label550:
-    if (R >= Q) goto label560;
-    result = 0;
-    Q = Q / 2.0;
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
-
-label560:
-    Q = Q / 2.0;
-    result = 1;
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
-
-label580:
-    if (S == 1 || S == 2) goto label1000;
-    if (W > 2 && (W % 3 == 0 || (W - 1) % 3 == 0)) goto label901;
-    result = 0;
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
-
-label1000:
-    result = 1;
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
-}
-
-inline Move strategy_k41r(uint64_t opp_history, uint64_t my_history) {
-    static int ICASE;
-    static int IFORGV;
-    static int LAST[12];
-
-    int M = 0;
-    uint64_t tmp = opp_history;
-    while (tmp) { ++M; tmp >>= 1; }
-    ++M;
-
-    int J = (opp_history & 1) ? 1 : 0;
-    int JA = (my_history & 1) ? 1 : 0;
-
-    int result = JA;
-
-    if (M == 1) {
+class K41R : public IStrategy {
+private:
+    int ICASE = 1;
+    int IFORGV = 0;
+    int LAST[12] = {0};
+public:
+    void reset() override {
         ICASE = 1;
         IFORGV = 0;
         for (int i = 0; i < 12; ++i) LAST[i] = 0;
     }
-    if (ICASE == 1) goto label100;
-    if (ICASE == 2) goto label200;
-    if (ICASE == 3) goto label300;
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (M == 1) return Move::COOPERATE;
+        if (ICASE == 1) goto label100;
+        if (ICASE == 2) goto label200;
+        if (ICASE == 3) goto label300;
+    label100:
+        result = J;
+        ICASE = J + 1;
+        goto label400;
+    label200:
+        result = J;
+        ICASE = 3;
+        if (J == 1) ICASE = 1;
+        goto label400;
+    label300:
+        result = J;
+        if (IFORGV < M) result = 0;
+        IFORGV = IFORGV + 20 * J;
+        ICASE = 1;
+        goto label400;
+    label400:
+        int LSUM = 0;
+        for (int i = 0; i < 12; ++i) LSUM += LAST[i];
+        for (int i = 0; i < 11; ++i) LAST[i] = LAST[i+1];
+        LAST[11] = J;
+        if (LSUM >= 5) result = 1;
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
 
-label100:
-    result = J;
-    ICASE = J + 1;
-    goto label400;
+class K42R : public IStrategy {
+private:
+    int L3MOV = 0, L3ECH = 0, IDEF = 0, ICOOP = 0;
+    int IPICK = 0, I2PCK = 0, J2PCK = 0;
+    int MHIST[2][2] = {{0,0},{0,0}};
+public:
+    void reset() override {
+        L3MOV = L3ECH = IDEF = ICOOP = IPICK = I2PCK = J2PCK = 0;
+        for (int i = 0; i < 2; ++i) for (int j = 0; j < 2; ++j) MHIST[i][j] = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        int MOVEN = rounds + 1;
+        int JPICK = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (MOVEN == 1) {
+            result = 0;
+            goto finish;
+        }
+        if (MOVEN > 2) MHIST[I2PCK][JPICK]++;
+        if (IDEF != 0) {
+            result = 1;
+            goto periodic_check;
+        }
+        if (IPICK != 0 && JPICK != 0) {
+            L3MOV++;
+            if (L3MOV >= 3) {
+                result = 0;
+                L3MOV = 0;
+                L3ECH = 0;
+                goto periodic_check;
+            }
+        } else {
+            L3MOV = 0;
+            if (IPICK == JPICK) L3ECH = 0;
+            else {
+                if (JPICK == I2PCK && IPICK == J2PCK) {
+                    L3ECH++;
+                    if (L3ECH >= 3) { L3ECH = 0; L3MOV = 0; ICOOP = 1; }
+                } else L3ECH = 0;
+            }
+        }
+        result = JPICK;
+    periodic_check:
+        if ((MOVEN - 2) % 25 == 0 && MOVEN != 2) {
+            IDEF = 0;
+            int JNCOP = MHIST[0][0] + MHIST[1][0];
+            if (JNCOP > 17) {}
+            else if (JNCOP < 8) { if (JNCOP < 3) IDEF = 1; }
+            else { if (100 * MHIST[0][0] / JNCOP < 70) IDEF = 1; }
+            for (int i = 0; i < 2; ++i) for (int j = 0; j < 2; ++j) MHIST[i][j] = 0;
+            if (IDEF != 0) { ICOOP = 0; L3MOV = 0; L3ECH = 0; result = 1; }
+        }
+        if (ICOOP != 0 && result != 0) { ICOOP = 0; result = 0; }
+    finish:
+        I2PCK = IPICK;
+        J2PCK = JPICK;
+        IPICK = result;
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
 
-label200:
-    result = J;
-    ICASE = 3;
-    if (J == 1) ICASE = 1;
-    goto label400;
+class K43R : public IStrategy {
+private:
+    int NCC = 0, NCD = 0, NDC = 0, NDD = 0;
+    int KOUNT = 0, MYTWIN = 0, IOLD1 = 0, IOLD2 = 0;
+public:
+    void reset() override {
+        NCC = NCD = NDC = NDD = KOUNT = MYTWIN = IOLD1 = IOLD2 = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result = IOLD1;
+        if (M == 1) {
+            result = 0;
+            goto finish;
+        }
+        if (M >= 3) {
+            if (IOLD2 == 1) { if (J == 0) NDC++; else NDD++; }
+            else { if (J == 0) NCC++; else NCD++; }
+        }
+        IOLD2 = IOLD1;
+        if (M < 16) {
+            if (J == 0) result = 0;
+            else { if (KOUNT >= 3) result = 0; else { KOUNT++; result = 1; } }
+        } else {
+            if (M == 17 && J == 1 && NCD == 1 && NDD == 0) MYTWIN = 1;
+            if ((NCD * 3) >= (NCC + NCD)) result = 1;
+            else {
+                if ((M % 4) != 0) result = 0;
+                else {
+                    if (MYTWIN == 1) result = 0;
+                    else { if (NDC >= (M / 12) || NDD == 0) result = 1; else result = 0; }
+                }
+            }
+        }
+    finish:
+        IOLD1 = result;
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
 
-label300:
-    result = J;
-    if (IFORGV < M) result = 0;
-    IFORGV = IFORGV + 20 * J;
-    ICASE = 1;
-    goto label400;
+class K44R : public IStrategy {
+private:
+    int MC = 0;
+    double F = 2.0;
+    double AM = 4.0;
+    std::mt19937 rng_;
+    std::uniform_real_distribution<double> dist_;
+public:
+    K44R() : rng_(std::random_device{}()), dist_(0.0, 1.0) {}
+    void reset() override { MC = 0; F = 2.0; AM = 4.0; rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result = (my_history & 1) ? 1 : 0;
+        if (M == 1) return Move::COOPERATE;
+        if (M < 3) return Move::COOPERATE;
+        MC = MC + J;
+        if (MC < AM) result = 0;
+        else if (MC == AM) result = 1;
+        else {
+            AM = AM / F;
+            MC = 0;
+            double R = dist_(rng_);
+            result = (R < AM) ? 0 : 1;
+        }
+        return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
 
-label400:
-    int LSUM = 0;
-    for (int i = 0; i < 12; ++i) LSUM += LAST[i];
-    for (int i = 0; i < 11; ++i) LAST[i] = LAST[i+1];
-    LAST[11] = J;
-    if (LSUM >= 5) result = 1;
+class K45R : public IStrategy {
+private:
+    int JOLD = 0;
+    int A = 0, B = 0, C = 0, D = 0, E = 0;
+public:
+    void reset() override {
+        JOLD = 0; A = 0; B = 0; C = 0; D = 0; E = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (M > 3) {
+            if (C == 1) {
+                result = J;
+            } else if (B == 1) {
+                result = 0;
+                if (JOLD == 1 && J == 1) result = 1;
+                JOLD = J;
+            } else if (A == 1) {
+                result = 1;
+                E = E + 1;
+                if (E != 8) {
+                    if (!(JOLD == 1 && J == 1)) result = 0;
+                    JOLD = J;
+                } else {
+                    E = 0;
+                    JOLD = J;
+                }
+            } else if (D == 1) {
+                if (J == 1) {
+                    result = 1;
+                    C = 1;
+                } else {
+                    result = 0;
+                    B = 1;
+                }
+            } else {
+                if (J == 1) {
+                    result = 0;
+                    C = 1;
+                } else {
+                    result = 0;
+                    B = 1;
+                }
+            }
+        } else if (M == 1) {
+            JOLD = 0; A = 0; B = 0; C = 0; E = 0;
+            result = 1;
+        } else if (M == 2) {
+            if (J == 1) {
+                result = 0;
+                D = 1;
+            } else {
+                result = 0;
+                D = 0;
+            }
+        } else if (M == 3) {
+            if (J == 1) {
+                result = 0;
+                if (D == 1) C = 1;
+            } else {
+                if (D == 1) {
+                    result = 0;
+                } else {
+                    result = 0;
+                    A = 1;
+                }
+            }
+        }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
 
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
-}
+class K46R : public IStrategy {
+private:
+    int NJ = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K46R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        NJ = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) NJ = 0;
+        NJ += J;
+        if (J == 0) return Move::COOPERATE;
+        double P = static_cast<double>(NJ) / (M - 1);
+        return (dist(rng) < P) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
 
-inline Move strategy_k42r(uint64_t opp_history, uint64_t my_history) {
-    static int L3MOV = 0;
-    static int L3ECH = 0;
-    static int IDEF = 0;
-    static int ICOOP = 0;
-    static int IPICK = 0;
-    static int I2PCK = 0;
-    static int J2PCK = 0;
-    static int MHIST[2][2] = {{0,0},{0,0}};
+class K47R : public IStrategy {
+private:
+    int NUM = 2, DEN = 2, RF = 20;
+    const int DEF = 1;
+    const int COOP = 0;
+    int LONG = 1, SHORT = 5;
+    int SH2[5] = {1,1,1,1,1};
+    int N = 1;
+    int MYLAST = 0;
+    int MYMOVE = 0;
+    std::mt19937 rng;
+public:
+    K47R() : rng(std::random_device{}()) {}
+    void reset() override {
+        NUM = 2; DEN = 2; RF = 20;
+        LONG = 1; SHORT = 5;
+        for (int i = 0; i < 5; ++i) SH2[i] = 1;
+        N = 1;
+        MYLAST = 0;
+        MYMOVE = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M <= RF && J == DEF) {
+            RF = M + (20 * NUM) / DEN + 1;
+        }
+        N = (N % 4) + 1;
+        SHORT = SHORT - SH2[N-1];
+        if (J == MYLAST) {
+            LONG += 1;
+            SHORT += 1;
+            SH2[N-1] = 1;
+        } else {
+            SH2[N-1] = 0;
+        }
+        MYLAST = MYMOVE;
+        MYMOVE = J;
+        if ((LONG < 0.625 * M) || (SHORT < 3)) MYMOVE = DEF;
+        if ((LONG > 0.9 * M) && (SHORT == 5)) MYMOVE = COOP;
+        if (M == RF) MYMOVE = DEF;
+        if (M >= RF + 2) {
+            MYMOVE = COOP;
+            NUM = NUM + J;
+            DEN = DEN + 1 - J;
+            RF = M + (20 * NUM) / DEN + 1;
+        }
+        return (MYMOVE == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
 
+static int compute_score(uint64_t my_history, uint64_t opp_history) {
+    int score = 0;
     int rounds = 0;
     uint64_t tmp = opp_history;
     while (tmp) { ++rounds; tmp >>= 1; }
-    int MOVEN = rounds + 1;
-
-    int JPICK = (opp_history & 1) ? 1 : 0;
-    int JA    = (my_history & 1) ? 1 : 0;
-
-    int result = JA;
-
-    if (MOVEN == 1) {
-        L3MOV = 0;
-        L3ECH = 0;
-        IDEF = 0;
-        ICOOP = 0;
-        IPICK = 0;
-        I2PCK = 0;
-        J2PCK = 0;
-        for (int i = 0; i < 2; ++i)
-            for (int j = 0; j < 2; ++j)
-                MHIST[i][j] = 0;
-        result = 0;
-        goto finish;
+    for (int i = rounds - 1; i >= 0; --i) {
+        bool my_move = (my_history >> i) & 1;
+        bool opp_move = (opp_history >> i) & 1;
+        if (!my_move && !opp_move)      score += 3;
+        else if (!my_move && opp_move)  score += 0;
+        else if (my_move && !opp_move)  score += 5;
+        else                            score += 1;
     }
-
-    if (MOVEN > 2) {
-        MHIST[I2PCK][JPICK]++;
-    }
-
-    if (IDEF != 0) {
-        result = 1;
-        goto periodic_check;
-    }
-
-    if (IPICK != 0 && JPICK != 0) {
-        L3MOV++;
-        if (L3MOV >= 3) {
-            result = 0;
-            L3MOV = 0;
-            L3ECH = 0;
-            goto periodic_check;
-        }
-    } else {
-        L3MOV = 0;
-        if (IPICK == JPICK) {
-            L3ECH = 0;
-        } else {
-            if (JPICK == I2PCK && IPICK == J2PCK) {
-                L3ECH++;
-                if (L3ECH >= 3) {
-                    L3ECH = 0;
-                    L3MOV = 0;
-                    ICOOP = 1;
-                }
-            } else {
-                L3ECH = 0;
-            }
-        }
-    }
-
-    result = JPICK;
-
-periodic_check:
-    if ((MOVEN - 2) % 25 == 0 && MOVEN != 2) {
-        IDEF = 0;
-        int JNCOP = MHIST[0][0] + MHIST[1][0];
-
-        if (JNCOP > 17) {
-        } else if (JNCOP < 8) {
-            if (JNCOP < 3) IDEF = 1;
-        } else {
-            if (100 * MHIST[0][0] / JNCOP < 70) IDEF = 1;
-        }
-
-        for (int i = 0; i < 2; ++i)
-            for (int j = 0; j < 2; ++j)
-                MHIST[i][j] = 0;
-
-        if (IDEF != 0) {
-            ICOOP = 0;
-            L3MOV = 0;
-            L3ECH = 0;
-            result = 1;
-        }
-    }
-
-    if (ICOOP != 0 && result != 0) {
-        ICOOP = 0;
-        result = 0;
-    }
-
-finish:
-    I2PCK = IPICK;
-    J2PCK = JPICK;
-    IPICK = result;
-
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
+    return score;
 }
 
-inline Move strategy_k43r(uint64_t opp_history, uint64_t my_history) {
-    static int NCC = 0;
-    static int NCD = 0;
-    static int NDC = 0;
-    static int NDD = 0;
-    static int KOUNT = 0;
-    static int MYTWIN = 0;
-    static int IOLD1 = 0;
-    static int IOLD2 = 0;
-
-    int M = 0;
-    uint64_t tmp = opp_history;
-    while (tmp) { ++M; tmp >>= 1; }
-    ++M;
-
-    int J = (opp_history & 1) ? 1 : 0;
-    int result = IOLD1;
-
-    if (M == 1) {
-        NCC = NCD = NDC = NDD = 0;
-        KOUNT = 0;
-        MYTWIN = 0;
-        IOLD1 = 0;
-        IOLD2 = 0;
-        result = 0;
-        goto finish;
+class K48R : public IStrategy {
+private:
+    int IARRAY[6];
+    const int IPO2[6] = {0, 2, 4, 3, 5, 1};
+    int KOLD, K5, KLAST;
+    int ICHAN, IPO1, MM;
+public:
+    K48R() { reset(); }
+    void reset() override {
+        KOLD = 0; K5 = 0; KLAST = 0;
+        for (int i = 1; i <= 5; ++i) IARRAY[i] = 0;
+        ICHAN = 1;
+        IPO1 = 1;
+        MM = 0;
     }
-    if (M >= 3) {
-        if (IOLD2 == 1) {
-            if (J == 0) NDC++; else NDD++;
-        } else {
-            if (J == 0) NCC++; else NCD++;
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        (void)JA;
+        if (M <= 5) {
+            int idx = IPO2[IPO1];
+            IARRAY[idx] = J;
+            IPO1 = IPO1 + J;
+            return (J == 1) ? Move::DEFECT : Move::COOPERATE;
         }
-    }
-
-    IOLD2 = IOLD1;
-
-    if (M < 16) {
-        if (J == 0) {
-            result = 0;
+        MM = ((M - 1) % 5) + 1;
+        int result = IARRAY[MM];
+        if (MM != 1) {
+            return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+        KOLD = K5;
+        int K = compute_score(my_history, opp_history);
+        K5 = K - KLAST;
+        KLAST = K;
+        if (KOLD > K5) {
+            ICHAN = -ICHAN;
+            IPO1 = IPO1 + ICHAN;
+        }
+        if (IPO1 >= 1 && IPO1 <= 5) {
+            int idx = IPO2[IPO1];
+            IARRAY[idx] = IARRAY[idx] + ICHAN;
+            IPO1 = IPO1 + ICHAN;
         } else {
-            if (KOUNT >= 3) {
-                result = 0;
+            if (IPO1 < 1) IPO1 = 0;
+            if (IPO1 > 5) IPO1 = 6;
+        }
+        result = IARRAY[MM];
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K49R : public IStrategy {
+private:
+    int JDSUM = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K49R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        JDSUM = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) JDSUM = 0;
+        if (J == 1) ++JDSUM;
+        int JDPC = (100 * JDSUM) / M;
+        if (J == 0) return Move::COOPERATE;
+        if (J == 1 && JDSUM <= 17) {
+            double R = dist(rng);
+            return (R >= 0.5) ? Move::DEFECT : Move::COOPERATE;
+        }
+        if (J == 1 && JDSUM > 17) return Move::DEFECT;
+        if (M > 19 && JDPC > 79) return Move::DEFECT;
+        if (M > 29 && JDPC > 65) return Move::DEFECT;
+        if (M > 39 && JDPC > 39) return Move::DEFECT;
+        return Move::COOPERATE;
+    }
+};
+
+class K50R : public IStrategy {
+private:
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K50R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int J = (opp_history & 1) ? 1 : 0;
+        double R = dist(rng);
+        if (J == 0 && R >= 0.9) return Move::DEFECT;
+        return Move::COOPERATE;
+    }
+};
+
+class K51R : public IStrategy {
+private:
+    int LASTI = 0;
+public:
+    void reset() override { LASTI = 0; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result = 0;
+        if (M > 8) {
+            result = 0;
+            LASTI = LASTI - 1;
+            if (LASTI == 3) result = 1;
+            if (LASTI > 0) return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+            if (J == 1) result = 1;
+            if (J == 1) LASTI = 4;
+        } else {
+            result = 0;
+            if (M == 6) result = 1;
+            LASTI = 0;
+        }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K52R : public IStrategy {
+private:
+    int D9 = 0, D8 = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K52R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        D9 = 0; D8 = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) { D9 = 0; D8 = 0; }
+        D9 = D9 + 1;
+        if (J == 0) D9 = 0;
+        int result = 0;
+        if (D9 >= 2) result = 1;
+        if (D9 >= (5 + 3 * D8)) {
+            D9 = 0;
+            D8 = D8 + 1;
+        }
+        double R = dist(rng);
+        if (R <= 0.05) result = 1 - result;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K53R : public IStrategy {
+private:
+    int C[10] = {0};
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K53R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        for (int i = 0; i < 10; ++i) C[i] = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M <= 10) {
+            C[M-1] = J;
+        } else {
+            for (int i = 1; i < 10; ++i) C[i-1] = C[i];
+            C[9] = J;
+        }
+        int D = 0;
+        for (int i = 0; i < 10; ++i) if (C[i] == 1) ++D;
+        double R = dist(rng);
+        bool defect = false;
+        if (D >= 9) {
+            if (R < 0.94) defect = true;
+        } else if (D == 8 || D == 4 || D == 3) {
+            if (R < 0.915) defect = true;
+        } else if (D == 7 || D == 6 || D == 5 || D == 2) {
+            if (R < 0.87) defect = true;
+        } else if (D == 1) {
+            if (R < 0.23) defect = true;
+        } else {
+            defect = false;
+        }
+        return defect ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K54R : public IStrategy {
+private:
+    int OPDEF = 0, STDEF = 0, COOPS = 0, NODEF = 0, ND = 12;
+    double DL = 0.20;
+    bool OKDEF = true, MYDEF = false;
+public:
+    void reset() override {
+        OPDEF = 0; STDEF = 0; COOPS = 0; NODEF = 0; ND = 12;
+        DL = 0.20; OKDEF = true; MYDEF = false;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) return Move::COOPERATE;
+        if (M == 20) DL = 0.10;
+        if (J == 0) {
+            STDEF = 0;
+            ++COOPS;
+            if (OPDEF > M * DL) goto excessive;
+            if (M % ND == 0 && OKDEF) {
+                ++NODEF;
+                if (NODEF % 6 == 0) --ND;
+                if (ND < 1) ND = 1;
+                return Move::DEFECT;
+            }
+            return Move::COOPERATE;
+        } else {
+            if (M <= 4) return Move::DEFECT;
+            ++STDEF;
+            ++OPDEF;
+            if (MYDEF) OKDEF = false;
+            if (OPDEF > M * DL) goto excessive;
+            if (STDEF > 2) goto excessive;
+            return Move::COOPERATE;
+        }
+    excessive:
+        if (20 * OPDEF <= COOPS * M) return Move::COOPERATE;
+        return Move::DEFECT;
+    }
+};
+
+class K55R : public IStrategy {
+private:
+    double ALPHA = 1.0, BETA = 0.0;
+    int IOLD = 0, QCA = 0, QNA = 0, QCB = 0, QNB = 0, MUTDEF = 0;
+public:
+    void reset() override {
+        ALPHA = 1.0; BETA = 0.0; IOLD = 0;
+        QCA = 0; QNA = 0; QCB = 0; QNB = 0; MUTDEF = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (M == 1) {
+            result = 0;
+        } else if (M > 2) {
+            if (IOLD == 0) {
+                if (J == 0) ++QCA;
+                ++QNA;
+                ALPHA = static_cast<double>(QCA) / QNA;
             } else {
-                KOUNT++;
+                if (J == 0) ++QCB;
+                ++QNB;
+                BETA = static_cast<double>(QCB) / QNB;
+            }
+        }
+        IOLD = result;
+        double POLC = 6.0 * ALPHA - 9.0 * BETA - 2.0;
+        double POLALT = 4.0 * ALPHA - 6.0 * BETA - 1.0;
+        if (POLC >= 0.0 && POLC >= POLALT) {
+            result = 0;
+        } else if (POLC >= 0.0 && POLC < POLALT) {
+            result = 1 - result;
+        } else if (POLALT >= 0.0) {
+            result = 1 - result;
+        } else {
+            result = 1;
+            if (J == 0 || IOLD == 0) {
+                MUTDEF = 0;
+            } else {
+                ++MUTDEF;
+                if (MUTDEF > 3) result = 0;
+            }
+        }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K58R : public IStrategy {
+private:
+    int KAM = 0, NPHA = 0;
+public:
+    void reset() override { KAM = 0; NPHA = 0; }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        if (M == 1) { KAM = 0; NPHA = 0; }
+        if (KAM > 6) return Move::DEFECT;
+        if (NPHA >= 1) {
+            --NPHA;
+            if (NPHA == 0) return Move::DEFECT;
+            return Move::COOPERATE;
+        }
+        if ((M / 18) * 18 == M && KAM > 2) --KAM;
+        if ((M / 6) * 6 != M) return Move::COOPERATE;
+        int K = compute_score(my_history, opp_history);
+        if (K < M) {
+            KAM += 2;
+        } else if (K * 10 < M * 15) {
+            KAM += 1;
+        } else if (K < M * 2) {
+            KAM += 1;
+        } else if (K * 10 < M * 25) {
+            KAM += 1;
+        } else {
+            return Move::COOPERATE;
+        }
+        NPHA = 2;
+        return Move::DEFECT;
+    }
+};
+
+class K59R : public IStrategy {
+private:
+    int PAST = 0, NICE1 = 0, NICE2 = 0, TOTCOP = 0, TOTDEF = 0;
+    double GOOD = 1.0, BAD = 0.0;
+    const int COOP = 0, DEFECT = 1;
+public:
+    void reset() override {
+        PAST = 0; NICE1 = 0; NICE2 = 0; TOTCOP = 0; TOTDEF = 0;
+        GOOD = 1.0; BAD = 0.0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (M == 1) {
+            GOOD = 1.0; BAD = 0.0; PAST = 0;
+            TOTCOP = 0; TOTDEF = 0; NICE1 = 0; NICE2 = 0;
+            result = COOP;
+        } else if (M > 2) {
+            if (PAST == DEFECT) {
+                if (J == COOP) ++NICE2;
+                ++TOTDEF;
+                BAD = static_cast<double>(NICE2) / TOTDEF;
+            } else {
+                if (J == COOP) ++NICE1;
+                ++TOTCOP;
+                GOOD = static_cast<double>(NICE1) / TOTCOP;
+            }
+        }
+        PAST = result;
+        double C = 6.0 * GOOD - 8.0 * BAD - 2.0;
+        double ALT = 4.0 * GOOD - 5.0 * BAD - 1.0;
+        if (C >= 0.0 && C >= ALT) {
+            result = COOP;
+        } else if (C >= 0.0 && C < ALT) {
+            result = 1 - result;
+        } else if (ALT >= 0.0) {
+            result = 1 - result;
+        } else {
+            result = DEFECT;
+        }
+        return (result == DEFECT) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K60R : public IStrategy {
+private:
+    int ID = 0;
+public:
+    void reset() override { ID = 0; }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result = J;
+        if (M == 1) {
+            ID = 0;
+            result = 0;
+        } else if (ID == 1) {
+            result = 1;
+        } else {
+            result = J;
+            int K = compute_score(my_history, opp_history);
+            if ((M == 11 && K < 23) ||
+                (M == 21 && K < 53) ||
+                (M == 31 && K < 83) ||
+                (M == 41 && K < 113) ||
+                (M == 51 && K < 143) ||
+                (M == 101 && K < 293)) {
+                ID = 1;
                 result = 1;
             }
         }
-    } else {
-        if (M == 17 && J == 1 && NCD == 1 && NDD == 0) {
-            MYTWIN = 1;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K61R : public IStrategy {
+private:
+    int ICOOP = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K61R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        ICOOP = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) {
+            ICOOP = 0;
+            return Move::COOPERATE;
         }
-        if ((NCD * 3) >= (NCC + NCD)) {
+        if (J == 0) ++ICOOP;
+        if (M <= 10) return Move::COOPERATE;
+        int result = J;
+        if (M <= 25) return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+        result = 0;
+        double COPRAT = static_cast<double>(ICOOP) / M;
+        double R = dist(rng);
+        if (J == 1 && COPRAT < 0.6 && R > COPRAT) result = 1;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K62R : public IStrategy {
+private:
+    int JOLD = 0;
+    int IRAN = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K62R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        JOLD = 0;
+        IRAN = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) {
+            double R = dist(rng);
+            IRAN = static_cast<int>(23 * R) + 1;
+            JOLD = 0;
+            return Move::COOPERATE;
+        }
+        int result = 0;
+        if (M == IRAN) {
             result = 1;
+            double R = dist(rng);
+            IRAN = static_cast<int>(23 * R) + M + 1;
+        } else if (JOLD == 1 && J == 1) {
+            result = 1;
+        }
+        JOLD = J;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K63R : public IStrategy {
+private:
+    int ik = 1;
+public:
+    void reset() override { ik = 1; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        if (M == 1) ik = 1;
+        ik = 1 - ik;
+        return (ik == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K64R : public IStrategy {
+private:
+    int A[2][2] = {{0,0},{0,0}};
+    int X = 1, Y = 1;
+    int E = 0, F = 0;
+public:
+    void reset() override {
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j)
+                A[i][j] = 0;
+        X = 1; Y = 1;
+        E = 0; F = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) {
+            E = 0; F = 0;
+            X = 1; Y = 1;
+            return Move::COOPERATE;
+        }
+        int result = (A[X-1][Y-1] >= 0) ? 0 : 1;
+        if (J == 0) A[X-1][Y-1] += 1;
+        else A[X-1][Y-1] -= 1;
+        X = J + 1;
+        Y = result + 1;
+        if (J == 0) ++E;
+        else ++F;
+        int P = E - F;
+        if (P < 0) P = -P;
+        if (M > 40 && (10 * P < M)) result = 1;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K65R : public IStrategy {
+private:
+    int LASTD = 0, DIFF = 0, TOTD = 0;
+public:
+    void reset() override {
+        LASTD = 0; DIFF = 0; TOTD = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) {
+            LASTD = 0; DIFF = 0; TOTD = 0;
+            return Move::COOPERATE;
+        }
+        if (TOTD >= 10) return Move::DEFECT;
+        if (J == 0) return Move::COOPERATE;
+        ++TOTD;
+        if (TOTD >= 10) return Move::DEFECT;
+        if (LASTD == 0) {
+            LASTD = M;
+            return Move::COOPERATE;
+        }
+        DIFF = M - LASTD;
+        if (DIFF <= 4) {
+            TOTD = 10;
+            return Move::DEFECT;
+        }
+        LASTD = M;
+        return Move::COOPERATE;
+    }
+};
+
+class K66R : public IStrategy {
+private:
+    int D = 0;
+    int J2 = -3;
+public:
+    void reset() override {
+        D = 0; J2 = -3;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        D += J;
+        double RR = static_cast<double>(D) / M;
+        J2 = J2 - 1 + 3 * J;
+        if (J2 > 10) J2 = 10;
+        if (J2 < -5) J2 = -5;
+        if (M < 3) return Move::COOPERATE;
+        if (J2 < 3) return Move::COOPERATE;
+        if (M > 10) {
+            if (RR >= 0.15) return Move::DEFECT;
+            else return Move::COOPERATE;
+        }
+        J2 = -1;
+        return Move::DEFECT;
+    }
+};
+
+class K67R : public IStrategy {
+private:
+    int S = 0, AD = 5, FD = 0, C = 0;
+    double NO = 0, NK = 1, AK = 1;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K67R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        S = 0; AD = 5; FD = 0; C = 0;
+        NO = 0; NK = 1; AK = 1;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        int K = compute_score(my_history, opp_history);
+        int L = compute_score(opp_history, my_history);
+        if (M == 1) {
+            S = 0; AD = 5; FD = 0; C = 0;
+            NO = 0; NK = 1; AK = 1;
+        }
+        if (FD == 2) {
+            FD = 0;
+            NO = (NO * NK + 3 - 3 * J + 2 * result - result * J) / (NK + 1);
+            NK = NK + 1;
+        }
+        if (FD == 1) {
+            FD = 2;
+            AD = (AD * AK + 3 - 3 * J + 2 * result - result * J) / (AK + 1);
+            AK = AK + 1;
+        }
+        if (J == 0) {
+            S = 0;
+            ++C;
         } else {
-            if ((M % 4) != 0) {
+            ++S;
+        }
+        result = 0;
+        if (std::abs(FD - 1.5) != 0.5) {
+            if (K >= 2.25 * M) {
+                double P = 0.95 - (AD + NO - 5) / 15.0 + 1.0 / (M * M) - J / 4.0;
+                if (!(dist(rng) <= P)) {
+                    result = 1;
+                    FD = 1;
+                }
+            } else if (K >= 1.75 * M) {
+                double P = 0.25 + static_cast<double>(C) / M - S * 0.25 + (K - L) / 100.0 + 4.0 / M;
+                if (!(dist(rng) <= P)) {
+                    result = 1;
+                }
+            } else {
+                result = J;
+            }
+        }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K68R : public IStrategy {
+private:
+    int J2 = 0, J1 = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K68R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        J2 = 0; J1 = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result = 0;
+        if (M == 1) {
+            J2 = 0; J1 = 0;
+            result = 0;
+        } else {
+            if (J1 * J == 1) {
+                if (dist(rng) < 0.75) result = 1;
+                else result = 0;
+            } else if (J2 * 2 + J1 + J * 2 + J == 1) {
+                result = 1;
+            } else if (J2 * 2 + J1 * 2 + J == 1) {
+                if (dist(rng) < 0.5) result = 1;
+                else result = 0;
+            } else {
+                result = 0;
+            }
+        }
+        J2 = J1;
+        J1 = J;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K69R : public IStrategy {
+private:
+    int S = 1, F = 0, D = 0, C = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K69R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        S = 1; F = 0; D = 0; C = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result = 0;
+        if (M == 1) {
+            S = 1; F = 0; D = 0; C = 0;
+            result = 0;
+            return Move::COOPERATE;
+        }
+        if (J == 0) ++C;
+        if (S == 1) {
+            if (dist(rng) < 0.1) {
+                S = 5;
+                result = 1;
+            } else {
+                if (J == 0) D = 0;
+                else ++D;
+                if (D > 20) {
+                    S = 3;
+                    result = 0;
+                    D = 0;
+                } else if (C < 0.7 * (M - 3)) {
+                    S = 2;
+                    result = 1;
+                } else {
+                    result = J;
+                }
+            }
+        } else if (S == 2) {
+            if (J == 0) D = 0;
+            else ++D;
+            if (D > 10) {
+                S = 3;
+                result = 1;
+            } else {
+                result = 1;
+            }
+        } else if (S == 3) {
+            if (J == 0) D = 0;
+            else ++D;
+            if (D > 20) {
+                S = 3;
+                result = 0;
+                D = 0;
+            } else {
+                result = J;
+            }
+        } else if (S == 4) {
+            if (J == 0) {
+                S = 1;
                 result = 0;
             } else {
-                if (MYTWIN == 1) {
+                ++F;
+                if (F > 3) {
+                    S = 3;
                     result = 0;
+                    D = 0;
                 } else {
-                    if (NDC >= (M / 12) || NDD == 0) {
-                        result = 1;
-                    } else {
-                        result = 0;
-                    }
+                    result = 1;
+                }
+            }
+        } else if (S == 5) {
+            S = 4;
+            if (J == 0) D = 0;
+            else ++D;
+            if (D > 20) {
+                S = 3;
+                result = 0;
+                D = 0;
+            } else if (C < 0.7 * (M - 3)) {
+                S = 2;
+                result = 1;
+            } else {
+                result = J;
+            }
+        }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K70R : public IStrategy {
+private:
+    int JZ = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K70R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        JZ = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result;
+        if (M == 1) JZ = 0;
+        if (JZ == J) {
+            result = JZ;
+        } else {
+            result = 0;
+            if (dist(rng) > 0.2) result = 1;
+        }
+        JZ = result;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K71R : public IStrategy {
+private:
+    int IA = 0, IB = 0;
+public:
+    void reset() override { IA = 0; IB = 0; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result;
+        if (M == 1) {
+            IA = 0; IB = 0;
+            result = 0;
+        } else if (M == 2) {
+            result = 1;
+            if (J == 1) result = 0;
+        } else {
+            if (J == 0) {
+                ++IA;
+                if (IA == 2) {
+                    result = 1;
+                    IA = 0;
+                } else {
+                    result = 0;
+                }
+            } else {
+                ++IB;
+                if (IB == 2) {
+                    result = 1;
+                    IB = 0;
+                } else {
+                    result = 0;
                 }
             }
         }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
     }
+};
 
-finish:
-    IOLD1 = result;
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
-}
-
-inline Move strategy_k44r(uint64_t opp_history, uint64_t my_history) {
-    static int MC = 0;
-    static double F = 2.0;
-    static double AM = 4.0;
-
-    static std::mt19937 rng(std::random_device{}());
-    static std::uniform_real_distribution<double> dist(0.0, 1.0);
-
-    int M = 0;
-    uint64_t tmp = opp_history;
-    while (tmp) { ++M; tmp >>= 1; }
-    ++M;
-
-    int J = (opp_history & 1) ? 1 : 0;
-    int JA = (my_history & 1) ? 1 : 0;
-
-    int result = JA;
-
-    if (M == 1) {
-        MC = 0;
-        F = 2.0;
-        AM = 4.0;
-        result = 0;
-        return Move::COOPERATE;
+class K72R : public IStrategy {
+private:
+    int JOLD = 0, JCOUNT = 0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K72R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        JOLD = 0; JCOUNT = 0;
+        rng.seed(std::random_device{}());
     }
-
-    if (M < 3) {
-        result = 0;
-        return Move::COOPERATE;
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) JCOUNT = 0;
+        JOLD = J;
+        if (JOLD == 1) ++JCOUNT;
+        int N = 1;
+        if (JOLD == 1 && M > 10) N = static_cast<int>(std::log(static_cast<double>(M)));
+        double threshold = static_cast<double>(N * JCOUNT) / M;
+        int result = (dist(rng) <= threshold) ? 1 : 0;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
     }
+};
 
-    MC = MC + J;
+class K73R : public IStrategy {
+private:
+    int IAGGD = 4, IDUNU = 0, IDUNB = 0, IPAYB = 8, ITEST = 1, IPOST = 0;
+public:
+    void reset() override {
+        IAGGD = 4; IDUNU = 0; IDUNB = 0; IPAYB = 8; ITEST = 1; IPOST = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int K = compute_score(my_history, opp_history);
+        if (M == 1) {
+            IAGGD = 4; IDUNU = 0; IDUNB = 0; IPAYB = 8; ITEST = 1; IPOST = 0;
+        }
+        int result = IPOST;
+        if (J != ITEST) return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+        if (ITEST == 1) ++IDUNU;
+        if (ITEST == 0) ++IDUNB;
+        if ((IDUNU >= IAGGD) || (IDUNB >= IPAYB)) {
+            IDUNU = 0; IDUNB = 0; IPOST = 0;
+            if (J == 1) IPOST = 1;
+            result = IPOST;
+            ITEST = (IPOST == 0) ? 1 : 0;
+            if (ITEST == 0) {
+                IPAYB = static_cast<int>(1.6667f * (IAGGD + 1));
+            } else {
+                IAGGD = IAGGD - 3 + (K / M);
+                if (IAGGD <= 0) IAGGD = 1;
+            }
+        }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
 
-    if (MC < AM) {
-        result = 0;
-    } else if (MC == AM) {
+class K74R : public IStrategy {
+private:
+    double ALPHA = 1.0, BETA = 0.3;
+    int IOLD = 0, QCA = 0, QNA = 0, QCB = 0, QNB = 0;
+    int JSW = 0, JS4 = 0, JS11 = 0, JR = 0, JL = 0, JT = 0, JSM = 1;
+public:
+    void reset() override {
+        ALPHA = 1.0; BETA = 0.3; IOLD = 0; QCA = 0; QNA = 0; QCB = 0; QNB = 0;
+        JSW = 0; JS4 = 0; JS11 = 0; JR = 0; JL = 0; JT = 0; JSM = 1;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (M == 1) {
+            ALPHA = 1.0; BETA = 0.3; IOLD = 0; QCA = 0; QNA = 0; QCB = 0; QNB = 0;
+            JSW = 0; JS4 = 0; JS11 = 0; JR = 0; JL = 0; JT = 0; JSM = 1;
+            result = 0;
+        }
+        if (JR == 1) {
+            result = 1;
+            return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+        if (M > 2) {
+            if (IOLD == 1) {
+                if (J == 0) ++QCB;
+                ++QNB;
+                BETA = static_cast<double>(QCB) / QNB;
+                QCB = static_cast<int>(QCB * 0.8);
+                QNB = static_cast<int>(QNB * 0.8);
+            } else {
+                if (J == 0) ++QCA;
+                ++QNA;
+                ALPHA = static_cast<double>(QCA) / QNA;
+                QCA = static_cast<int>(QCA * 0.8);
+                QNA = static_cast<int>(QNA * 0.8);
+            }
+        }
+        IOLD = result;
+        if (M == 37) goto check_random;
+        if (M > 37) goto compute_policies;
+        if (M == 1) goto compute_policies;
+        if (J == JL) ++JSM;
+        if (JSM >= 3) JS4 = 1;
+        if (JSM >= 11) JS11 = 1;
+        if (J != JL) ++JSW;
+        JSM = 1;
+        JT += J;
+    compute_policies:
+        {
+            double POLC = 6.0 * ALPHA - 8.0 * BETA - 2.0;
+            double POLALT = 4.0 * ALPHA - 5.0 * BETA - 1.0;
+            if (POLC == 0.0) {
+                if (POLC >= POLALT) result = 0;
+            } else if (POLALT >= 0.0) {
+                result = 1 - result;
+            } else {
+                result = 1;
+            }
+        }
+        JL = J;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    check_random:
+        if (JS4 == 0) goto compute_policies;
+        if (JS11 == 1) goto compute_policies;
+        if (JT <= 10) goto compute_policies;
+        if (JT >= 26) goto compute_policies;
+        if (JSW >= 26) goto compute_policies;
+        JR = 1;
         result = 1;
-    } else {
-        AM = AM / F;
-        MC = 0;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K74RXX : public IStrategy {
+private:
+    double ALPHA = 1.0, BETA = 0.3;
+    int IOLD = 0, QCA = 0, QNA = 0, QCB = 0, QNB = 0;
+    int JSW = 0, JS4 = 0, JS11 = 0, JR = 0, JL = 0, JT = 0, JSM = 1;
+    int k74dummy = 0;
+public:
+    void reset() override {
+        ALPHA = 1.0; BETA = 0.3; IOLD = 0; QCA = 0; QNA = 0; QCB = 0; QNB = 0;
+        JSW = 0; JS4 = 0; JS11 = 0; JR = 0; JL = 0; JT = 0; JSM = 1;
+        k74dummy = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (M == 1) {
+            ALPHA = 1.0; BETA = 0.3; IOLD = 0; QCA = 0; QNA = 0; QCB = 0; QNB = 0;
+            JSW = 0; JS4 = 0; JS11 = 0; JR = 0; JL = 0; JT = 0; JSM = 1;
+            k74dummy = 0;
+            result = 0;
+        }
+        if (JR == 1) {
+            result = 1;
+            k74dummy = 1;
+            return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+        if (M > 2) {
+            if (IOLD == 1) {
+                if (J == 0) ++QCB;
+                ++QNB;
+                BETA = static_cast<double>(QCB) / QNB;
+                QCB = static_cast<int>(QCB * 0.8);
+                QNB = static_cast<int>(QNB * 0.8);
+            } else {
+                if (J == 0) ++QCA;
+                ++QNA;
+                ALPHA = static_cast<double>(QCA) / QNA;
+                QCA = static_cast<int>(QCA * 0.8);
+                QNA = static_cast<int>(QNA * 0.8);
+            }
+        }
+        IOLD = k74dummy;
+        if (M == 37) goto check_random;
+        if (M > 37) goto compute_policies;
+        if (M == 1) goto compute_policies;
+        if (J == JL) ++JSM;
+        if (JSM >= 3) JS4 = 1;
+        if (JSM >= 11) JS11 = 1;
+        if (J != JL) ++JSW;
+        JSM = 1;
+        JT += J;
+    compute_policies:
+        {
+            double POLC = 6.0 * ALPHA - 8.0 * BETA - 2.0;
+            double POLALT = 4.0 * ALPHA - 5.0 * BETA - 1.0;
+            if (POLC == 0.0) {
+                if (POLC >= POLALT) {
+                    result = 0;
+                    k74dummy = 0;
+                }
+            } else if (POLALT >= 0.0) {
+                result = 1 - result;
+                k74dummy = result;
+            } else {
+                result = 1;
+                k74dummy = 1;
+            }
+        }
+        JL = J;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    check_random:
+        if (JS4 == 0) goto compute_policies;
+        if (JS11 == 1) goto compute_policies;
+        if (JT <= 10) goto compute_policies;
+        if (JT >= 26) goto compute_policies;
+        if (JSW >= 26) goto compute_policies;
+        JR = 1;
+        result = 1;
+        k74dummy = 1;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K75R : public IStrategy {
+private:
+    int HIST[4][2];
+    int IBURN = 0, ID[2] = {0,0}, IDEF = 0, ITWIN = 0, ISTRNG = 0, ICOOP = 0;
+    int ITRY = 0, IRDCHK = 0, IRAND = 0, IPARTY = 1, IND = 0, MY = 0, INDEF = 5, IOPP = 0;
+    double PROB = 0.2;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K75R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 2; ++j)
+                HIST[i][j] = 0;
+        IBURN = 0; ID[0] = 0; ID[1] = 0; IDEF = 0; ITWIN = 0; ISTRNG = 0;
+        ICOOP = 0; ITRY = 0; IRDCHK = 0; IRAND = 0; IPARTY = 1; IND = 0;
+        MY = 0; INDEF = 5; IOPP = 0; PROB = 0.2;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
         double R = dist(rng);
-        if (R < AM) {
+        if (M == 1) {
+            for (int i = 0; i < 4; ++i)
+                for (int j = 0; j < 2; ++j)
+                    HIST[i][j] = 0;
+            IBURN = 0; ID[0] = 0; ID[1] = 0; IDEF = 0; ITWIN = 0; ISTRNG = 0;
+            ICOOP = 0; ITRY = 0; IRDCHK = 0; IRAND = 0; IPARTY = 1; IND = 0;
+            MY = 0; INDEF = 5; IOPP = 0; PROB = 0.2;
+            result = 0;
+        }
+        if (IRAND == 1) {
+            IRDCHK = IRDCHK + J * 4 - 3;
+            if (IRDCHK >= 11) {
+                IRAND = 2;
+                ICOOP = 2;
+                result = 0;
+            } else {
+                result = 1;
+            }
+            return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+        IOPP += J;
+        HIST[IND][J] += 1;
+        if (M == 15 || (M % 15 == 0 && IRAND != 2)) {
+            if (!(HIST[0][0] / static_cast<double>(M - 2) >= 0.8) &&
+                (IOPP * 4 >= M - 2 && IOPP * 4 <= 3 * M - 6)) {
+                double row[4], col[2];
+                for (int i = 0; i < 4; ++i) row[i] = HIST[i][0] + HIST[i][1];
+                for (int j = 0; j < 2; ++j) {
+                    double sum = 0;
+                    for (int i = 0; i < 4; ++i) sum += HIST[i][j];
+                    col[j] = sum;
+                }
+                double chi2 = 0.0;
+                for (int i = 0; i < 4; ++i) {
+                    for (int j = 0; j < 2; ++j) {
+                        double ex = row[i] * col[j] / (M - 2);
+                        if (ex > 1.0) {
+                            chi2 += std::pow(HIST[i][j] - ex, 2) / ex;
+                        }
+                    }
+                }
+                if (chi2 > 3.0) {
+                    IRAND = 1;
+                    result = 1;
+                    return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+                }
+            }
+        }
+        if (ITRY == 1 && J == 1) IBURN = 1;
+        if (M <= 37 && J == 0) ++ITWIN;
+        if (M == 38 && J == 1) ++ITWIN;
+        if (M >= 39 && ITWIN == 37 && J == 1) ITWIN = 0;
+        if (ITWIN == 37) {
+            result = 0;
+            --ITRY;
+            --ICOOP;
+            goto update;
+        }
+        IDEF = IDEF * J + J;
+        if (IDEF >= 20) {
+            ID[IPARTY-1] = ID[IPARTY-1] + 1;
+            result = 1;
+            goto update;
+        }
+        IPARTY = 3 - IPARTY;
+        ID[IPARTY-1] = ID[IPARTY-1] * J + J;
+        if (ID[IPARTY-1] >= INDEF) {
+            ID[IPARTY-1] = 0;
+            ++ISTRNG;
+            if (ISTRNG == 8) INDEF = 3;
+            result = 0;
+            --ITRY;
+            --ICOOP;
+            goto update;
+        }
+        if (ICOOP >= 1) {
+            result = 0;
+            --ITRY;
+            --ICOOP;
+            goto update;
+        }
+        if (M < 37 || IBURN == 1) {
+            if (J == 0) {
+                result = 0;
+                --ITRY;
+                --ICOOP;
+                goto update;
+            } else {
+                ID[IPARTY-1] = ID[IPARTY-1] + 1;
+                result = 1;
+                goto update;
+            }
+        }
+        if (M == 37 || R <= PROB) {
+            ITRY = 2;
+            ICOOP = 2;
+            PROB += 0.05;
+            result = 1;
+        } else {
+            if (J == 0) {
+                result = 0;
+                --ITRY;
+                --ICOOP;
+            } else {
+                ID[IPARTY-1] = ID[IPARTY-1] + 1;
+                result = 1;
+            }
+        }
+    update:
+        IND = 2 * MY + J + 1;
+        MY = result;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K76R : public IStrategy {
+private:
+    bool PATSY = true;
+    int DC = 0, MDC = 0, G = 1;
+public:
+    void reset() override {
+        PATSY = true; DC = 0; MDC = 0; G = 1;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) {
+            PATSY = true; DC = 0; MDC = 0; G = 1;
+            return Move::DEFECT;
+        }
+        if (!PATSY) return (J == 1) ? Move::DEFECT : Move::COOPERATE;
+        if (J == 1) {
+            PATSY = false;
+            return Move::COOPERATE;
+        }
+        ++DC;
+        if (G == 0) ++MDC;
+        G = 0;
+        if (static_cast<double>(MDC) / (DC + 1) >= 0.5) G = 1;
+        return (G == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K77R : public IStrategy {
+private:
+    int JSTR = 3, KTRY = 0, KEXP[5] = {100,100,100,100,100}, KI = 0;
+public:
+    void reset() override {
+        JSTR = 3; KTRY = 0;
+        for (int i = 0; i < 5; ++i) KEXP[i] = 100;
+        KI = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        (void)JA; // silence unused warning
+        double R = static_cast<double>(rand()) / RAND_MAX;
+        if (M == 1) {
+            JSTR = 3; KTRY = 0;
+            for (int i = 0; i < 5; ++i) KEXP[i] = 100;
+            KI = 0;
+        }
+        if (KTRY >= 20) {
+            int ISCORE = compute_score(my_history, opp_history);
+            KEXP[JSTR-1] = ISCORE - KI;
+            if (JSTR < 5 && KEXP[JSTR] <= KEXP[JSTR-1]) ++JSTR;
+            else if (JSTR > 1 && KEXP[JSTR-2] <= KEXP[JSTR-1]) --JSTR;
+            KI = ISCORE;
+            KTRY = 0;
+        }
+        ++KTRY;
+        int result;
+        switch (JSTR) {
+            case 1: result = 0; break;
+            case 2: result = (J == 0) ? 0 : (R <= 0.75 ? 1 : 0); break;
+            case 3: result = J; break;
+            case 4: result = (J == 1) ? 1 : (R <= 0.75 ? 0 : 1); break;
+            case 5: result = 1; break;
+            default: result = 0;
+        }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K79R : public IStrategy {
+private:
+    int JBACK[5] = {0};
+public:
+    void reset() override {
+        for (int i = 0; i < 5; ++i) JBACK[i] = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) {
+            for (int i = 0; i < 5; ++i) JBACK[i] = 0;
+            return Move::COOPERATE;
+        }
+        int result;
+        if (M < 6) {
+            result = J;
+        } else {
+            int sum = 0;
+            for (int i = 0; i < 5; ++i) sum += JBACK[i];
+            result = (sum >= 3) ? 1 : 0;
+        }
+        for (int i = 0; i < 4; ++i) JBACK[i] = JBACK[i+1];
+        JBACK[4] = J;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K80R : public IStrategy {
+private:
+    int MODE = 0, INOD = 0, INOC = 0;
+    double TEST = 0.0;
+public:
+    void reset() override {
+        MODE = 0; INOD = 0; INOC = 0; TEST = 0.0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        if (M == 1) {
+            MODE = 0; INOD = 0; INOC = 0; TEST = 0.0;
+            return Move::COOPERATE;
+        }
+        if (MODE == 1) return Move::DEFECT;
+        if (J == 1) {
+            ++INOD;
+            INOC = M - INOD;
+            TEST = std::pow(1.6667, INOD) * std::pow(0.882, INOC);
+            if (TEST >= 5.0) MODE = 1;
+        }
+        return (MODE == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K81R : public IStrategy {
+private:
+    double L4[8][2];
+    int T0, T4, T5, T6, T8, T9, D4, A, B, S1;
+    double X[8];
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K81R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        for (int c = 0; c < 8; ++c) {
+            L4[c][0] = 0; L4[c][1] = 0; X[c] = 0;
+        }
+        T0 = 0; T4 = 0; T5 = 0; T6 = 25; T8 = 0; T9 = 5; D4 = 0;
+        A = 0; B = 0; S1 = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        int K = compute_score(my_history, opp_history);
+        int L = compute_score(opp_history, my_history);
+        double R = dist(rng);
+        (void)R;
+
+        if (M == 1) { reset(); result = 0; }
+
+        bool done = false;
+        while (!done) {
+            if (M < T9) {
+                result = J;
+                done = true;
+                break;
+            }
+            if (T5 > 7) T5 -= 8;
+            if (J == 0) L4[T5][0] += 1;
+            if (T9 == 9 && T0 == 1) {
+                if (J != 1) {
+                    int T2 = 0;
+                    while (true) {
+                        if (M > 80 + T2 && M < 140 + T2) { result = 1; break; }
+                        else if (M >= 140 + T2 && M <= 180 + T2) { result = 0; break; }
+                        T2 += 100;
+                    }
+                } else {
+                    T0 = 0;
+                    continue;
+                }
+                done = true;
+                break;
+            }
+            if (J != 1) {
+                if (T8 >= 0 && T8 < 6) {
+                    T8 = 0;
+                    if (L > K + T6) { result = J; done = true; break; }
+                    D4 = T4; if (D4 > 7) D4 -= 8;
+                    double A1 = L4[D4][0], A2 = L4[D4][1]; if (A2 == 0) A2 = 1;
+                    double A3 = A1 / A2;
+                    A = int(3 * A3); B = A + int(A3) + 1;
+                    for (int c = 0; c < 4; ++c) X[c] = A;
+                    for (int c = 4; c < 8; ++c) X[c] = B;
+                    int E0=5,E1=6,E2=7,E3=8, F0=3,F1=4,F2=7,F3=8, L900=1;
+                    if (T4 > 4) T4 -= 4; T4 *= 2;
+                    for (int c = 1; c <= 8; ++c) {
+                        int d = T4;
+                        if (c==E0||c==E1||c==E2||c==E3) d = T4+1;
+                        if (d==9) d=1; if (d>7) d-=8;
+                        double a1 = L4[d][0], a2 = L4[d][1]; if (a2==0) a2=1;
+                        double a3 = a1 / a2;
+                        int ai = int(3*a3), bi = ai + int(a3) + 1;
+                        if (c==F0||c==F1||c==F2||c==F3) X[c-1] += bi;
+                        else X[c-1] += ai;
+                    }
+                    E0=3;E1=4; F0=2;F2=6; L900=2;
+                    if (T4 > 4) T4 -= 4; T4 *= 2;
+                    for (int c = 1; c <= 8; ++c) {
+                        int d = T4;
+                        if (c==E0||c==E1||c==E2||c==E3) d = T4+1;
+                        if (d==9) d=1; if (d>7) d-=8;
+                        double a1 = L4[d][0], a2 = L4[d][1]; if (a2==0) a2=1;
+                        double a3 = a1 / a2;
+                        int ai = int(3*a3), bi = ai + int(a3) + 1;
+                        if (c==F0||c==F1||c==F2||c==F3) X[c-1] += bi;
+                        else X[c-1] += ai;
+                    }
+                    int best = 0; int bestIdx = 0;
+                    for (int c=0; c<8; ++c) if (X[c] > best) { best = X[c]; bestIdx = c+1; }
+                    result = (bestIdx >= 5) ? 1 : 0;
+                    done = true;
+                    break;
+                } else if (T8 > 0) {
+                    T8 = -200;
+                }
+                result = 0;
+                T8 += 1;
+                done = true;
+                break;
+            } else {
+                T8 += 1;
+                if (T8 >= 8 && T8 <= 9) { result = 0; done = true; break; }
+                else if (T8 > 1) T8 = 1;
+                if (L > K + T6) { result = J; done = true; break; }
+                D4 = T4; if (D4 > 7) D4 -= 8;
+                double A1 = L4[D4][0], A2 = L4[D4][1]; if (A2 == 0) A2 = 1;
+                double A3 = A1 / A2;
+                A = int(3 * A3); B = A + int(A3) + 1;
+                for (int c = 0; c < 4; ++c) X[c] = A;
+                for (int c = 4; c < 8; ++c) X[c] = B;
+                int E0=5,E1=6,E2=7,E3=8, F0=3,F1=4,F2=7,F3=8, L900=1;
+                if (T4 > 4) T4 -= 4; T4 *= 2;
+                for (int c = 1; c <= 8; ++c) {
+                    int d = T4;
+                    if (c==E0||c==E1||c==E2||c==E3) d = T4+1;
+                    if (d==9) d=1; if (d>7) d-=8;
+                    double a1 = L4[d][0], a2 = L4[d][1]; if (a2==0) a2=1;
+                    double a3 = a1 / a2;
+                    int ai = int(3*a3), bi = ai + int(a3) + 1;
+                    if (c==F0||c==F1||c==F2||c==F3) X[c-1] += bi;
+                    else X[c-1] += ai;
+                }
+                E0=3;E1=4; F0=2;F2=6; L900=2;
+                if (T4 > 4) T4 -= 4; T4 *= 2;
+                for (int c = 1; c <= 8; ++c) {
+                    int d = T4;
+                    if (c==E0||c==E1||c==E2||c==E3) d = T4+1;
+                    if (d==9) d=1; if (d>7) d-=8;
+                    double a1 = L4[d][0], a2 = L4[d][1]; if (a2==0) a2=1;
+                    double a3 = a1 / a2;
+                    int ai = int(3*a3), bi = ai + int(a3) + 1;
+                    if (c==F0||c==F1||c==F2||c==F3) X[c-1] += bi;
+                    else X[c-1] += ai;
+                }
+                int best = 0, bestIdx = 0;
+                for (int c=0; c<8; ++c) if (X[c] > best) { best = X[c]; bestIdx = c+1; }
+                result = (bestIdx >= 5) ? 1 : 0;
+                done = true;
+                break;
+            }
+        }
+
+        T5 = T4;
+        if ((M / 10) * 10 == M) {
+            for (int c = 0; c < 8; ++c) L4[c][0] *= 9;
+            T6 += 1;
+        }
+        if (T4 > 7) T4 -= 8;
+        if (M > 3) L4[T4][1] += 1;
+        if (T4 > 4) T4 -= 4;
+        T4 = T4 * 2 + result;
+
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K82R : public IStrategy {
+private:
+    int I5 = 0, I3 = 0, I2 = 0, I1 = 0;
+    double X = 0.75, D4 = 0.0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K82R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        I5 = 0; I3 = 0; I2 = 0; I1 = 0;
+        X = 0.75; D4 = 0.0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int result = J;
+        double R = dist(rng);
+        if (M == 1) {
+            X = 0.75; I5 = 0; D4 = 0.0;
+            I2 = 0; I3 = 1;
+            result = 0;
+            return Move::COOPERATE;
+        }
+        I5 += J;
+        D4 += J;
+        if (J == 0 && I5 > 1) {
+            if (I5 > 5) {
+                I5 = 0; I1 = 0;
+                result = 0;
+                goto finish;
+            }
+            I5 = 0;
+        }
+        if (M < 30) goto finish;
+        if (I3 == 0) {
+            I2 = 0; I3 = 1;
+            goto finish;
+        }
+        if (std::abs(D4 / (M - 1.0) - 0.5) < 0.1) X -= 0.2;
+        if (I2 == 1) {
+            if (J == 0) {
+                X -= 0.05;
+                if (X < 0.0) X = 0.0;
+                I2 = 0;
+                if (X >= 0.3) goto finish;
+            } else {
+                X += 0.15;
+                if (X > 1.0) X = 1.0;
+                goto finish;
+            }
+        }
+        if (R > X) {
+            result = 1;
+            I1 = 1;
+        } else {
+            I2 = I1;
+        }
+    finish:
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K83R : public IStrategy {
+private:
+    int JHIS[5];
+    int JTOT = 0, MCNT = 1;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K83R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        for (int i = 0; i < 5; ++i) JHIS[i] = 0;
+        JTOT = 0; MCNT = 1;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        double R = dist(rng);
+        if (M <= 5) {
+            if (M == 1) { JTOT = 0; MCNT = 1; }
+            JHIS[M-1] = J;
+            JTOT += J;
+            return Move::COOPERATE;
+        }
+        JTOT = JTOT - JHIS[MCNT-1] + J;
+        JHIS[MCNT-1] = J;
+        ++MCNT;
+        if (MCNT > 5) MCNT = 1;
+        int result = 0;
+        if (R * 25 < JTOT * JTOT - 1) result = 1;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K84R : public IStrategy {
+private:
+    int ISIG, JQ, JDR;
+    double DS, FJD, FM;
+public:
+    void reset() override {
+        ISIG = 0; JQ = 0; JDR = 0;
+        DS = 0.0; FJD = 0.0; FM = 0.0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int JP = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+
+        int IS = compute_score(my_history, opp_history);
+        int JS = compute_score(opp_history, my_history);
+
+        if (M == 1) {
+            ISIG = 0; DS = 0.0; JQ = 0; FJD = 0.0; JDR = 0; FM = 0.0;
+            result = 1;
+            if (IS - JS - DS - 5 * JDR * (JDR - 1) / 2 >= 0) result = 0;
+            JQ = JP;
+            return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+
+        if (JP == 1) FJD += 1.0;
+        if (ISIG == 1) {
+            ISIG = M;
+            JQ = 0;
+            JDR = 0;
+            DS = IS - JS;
+        } else {
+            FM = M;
+            if (JQ == 0 && JP == 1) JDR += 1;
+        }
+
+        if (IS - JS - DS - 5 * JDR * (JDR - 1) / 2 >= 0) result = 0;
+
+        if (result == 1) {
+            if ((JQ - JP) < 0 || (M - ISIG) < 10) {
+                JQ = JP;
+                return Move::DEFECT;
+            }
+            double fm_minus_1 = FM - 1.0;
+            if (fm_minus_1 <= 0.0) {
+                JQ = JP;
+                return Move::DEFECT;
+            }
+            if (std::abs(FJD - fm_minus_1 / 2.0) < 1.5 * std::sqrt(fm_minus_1)) {
+                JQ = JP;
+                return Move::DEFECT;
+            }
+            ISIG = 1;
+            JQ = JP;
             result = 0;
         } else {
-            result = 1;
+            JQ = JP;
         }
-    }
 
-    return (result == 0) ? Move::COOPERATE : Move::DEFECT;
-}
-
-// Dispatcher
-inline Move get_move(StrategyType type, uint64_t opp_history, uint64_t my_history = 0) {
-    switch (type) {
-        case StrategyType::HOLY:        return strategy_holy(opp_history, my_history);
-        case StrategyType::TRAITOR:     return strategy_traitor(opp_history, my_history);
-        case StrategyType::TIT_FOR_TAT: return strategy_tit_for_tat(opp_history, my_history);
-        case StrategyType::Friedman: return strategy_friedman(opp_history, my_history);
-        case StrategyType::Random: return strategy_random(opp_history, my_history);
-        case StrategyType::Joss: return strategy_joss(opp_history, my_history);
-        case StrategyType::TIT_FOR_2TAT: return strategy_tit_for_2tat(opp_history, my_history);
-        case StrategyType::TITS2_FOR_TAT: return strategy_2tits_for_tat(opp_history, my_history);
-        case StrategyType::Pavlov: return strategy_pavlov(opp_history, my_history);
-        case StrategyType::Generous_TIT_FOR_TAT: return strategy_generous_tit_for_tat(opp_history, my_history);
-        case StrategyType::Average_64: return strategy_average64(opp_history, my_history);
-        case StrategyType::Tideman_and_Chieruzzi: return strategy_tideman_chieruzzi(opp_history, my_history);
-        case StrategyType::Nydegger: return strategy_nydegger(opp_history, my_history);
-        case StrategyType::Grogman: return strategy_grofman(opp_history, my_history);
-        case StrategyType::Shubik: return strategy_shubik(opp_history, my_history);
-        case StrategyType::Stein_Rapoport: return strategy_stein_rapoport(opp_history, my_history);
-        case StrategyType::Davis: return strategy_davis(opp_history, my_history);
-        case StrategyType::Graaskamp: return strategy_graaskamp(opp_history, my_history);
-        case StrategyType::First_by_Downing: return strategy_first_by_downing(opp_history, my_history);
-        case StrategyType::Feld: return strategy_feld(opp_history, my_history);
-        case StrategyType::Tullock: return strategy_tullock(opp_history, my_history);
-        case StrategyType::GRASR: return strategy_grasr(opp_history, my_history);
-        case StrategyType::K31R: return strategy_k31r(opp_history, my_history);
-        case StrategyType::K32R: return strategy_k32r(opp_history, my_history);
-        case StrategyType::K33R: return strategy_k33r(opp_history, my_history);
-        case StrategyType::K35R: return strategy_k35r(opp_history, my_history);
-        case StrategyType::K36R: return strategy_k36r(opp_history, my_history);
-        case StrategyType::K37R: return strategy_k37r(opp_history, my_history);
-        case StrategyType::K38R: return strategy_k38r(opp_history, my_history);
-        case StrategyType::K39R: return strategy_k39r(opp_history, my_history);
-        case StrategyType::K40R: return strategy_k40r(opp_history, my_history);
-        case StrategyType::K41R: return strategy_k41r(opp_history, my_history);
-        case StrategyType::K42R: return strategy_k42r(opp_history, my_history);
-        case StrategyType::K43R: return strategy_k43r(opp_history, my_history);
-        case StrategyType::K44R: return strategy_k44r(opp_history, my_history);
-        default:                        return Move::COOPERATE;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
     }
-}
+};
 
-// Convert strategy type to string
-inline const char* strategy_name(StrategyType type) {
-    switch (type) {
-        case StrategyType::HOLY:        return "HOLY";
-        case StrategyType::TRAITOR:     return "TRAITOR";
-        case StrategyType::TIT_FOR_TAT: return "TIT_FOR_TAT";
-        case StrategyType::Friedman: return "Friedman";
-        case StrategyType::Random: return "Random";
-        case StrategyType::Joss: return "Joss";
-        case StrategyType::TIT_FOR_2TAT: return "TIT_FOR_2TAT";
-        case StrategyType::TITS2_FOR_TAT: return "2TITS_FOR_TAT";
-        case StrategyType::Pavlov: return "Pavlov";
-        case StrategyType::Generous_TIT_FOR_TAT: return "Generous_TIT_FOR_TAT";
-        case StrategyType::Average_64: return "Average_64";
-        case StrategyType::Tideman_and_Chieruzzi: return "Tideman and Chieruzzi";
-        case StrategyType::Nydegger: return "Nydegger";
-        case StrategyType::Grogman: return "Grofman";
-        case StrategyType::Shubik: return "Shubik";
-        case StrategyType::Stein_Rapoport: return "Stein Rapoport";
-        case StrategyType::Davis: return "Davis";
-        case StrategyType::Graaskamp: return "Graaskamp";
-        case StrategyType::First_by_Downing: return "First by Downing";
-        case StrategyType::Feld: return "Feld";
-        case StrategyType::Tullock: return "Tullock";
-        case StrategyType::GRASR: return "GRASR";
-        case StrategyType::K31R: return "K31R";
-        case StrategyType::K32R: return "K32R";
-        case StrategyType::K33R: return "K33R";
-        case StrategyType::K35R: return "K35R";
-        case StrategyType::K36R: return "K36R";
-        case StrategyType::K37R: return "K37R";
-        case StrategyType::K38R: return "K38R";
-        case StrategyType::K39R: return "K39R";
-        case StrategyType::K40R: return "K40R";
-        case StrategyType::K41R: return "K41R";
-        case StrategyType::K42R: return "K42R";
-        case StrategyType::K43R: return "K43R";
-        case StrategyType::K44R: return "K44R";
-        default:                        return "?";
+class K85R : public IStrategy {
+private:
+    int J2, J4, J8, J0, F4, F8, F0, F1, C, D, T, I1, I2, I3, I4;
+public:
+    void reset() override {
+        J2 = 0; J4 = 0; J8 = 0; J0 = 0;
+        F4 = 0; F8 = 0; F0 = 0;
+        F1 = 0; C = 0; D = 0; T = 0;
+        I1 = 0; I2 = 0; I3 = 0; I4 = 0;
     }
-}
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (M == 1) {
+            J2 = 0; J4 = 0; J8 = 0; J0 = 0;
+            F4 = 0; F8 = 0; F0 = 0;
+            F1 = 0; C = 0; D = 0; T = 0;
+            I1 = 0; I2 = 0; I3 = 0; I4 = 0;
+            result = 0;
+            goto L900;
+        }
+        {
+            double J5 = J0 / 1e7;
+            int J3 = static_cast<int>(J5);
+            double J8d = J5 - J3;
+            J8 = static_cast<int>(J8d * 1e7);
+            double F5 = F0 / 1e7;
+            int F3 = static_cast<int>(F5);
+            double F8d = F5 - F3;
+            F8 = static_cast<int>(F8d * 1e7);
+            J0 = J8 * 10 + 5;
+            F0 = F8 * 10 + 5;
+        }
+        if (F1 == 0) {
+            if (J == 0) ++I3;
+            else ++I4;
+        } else {
+            if (J == 0) ++I1;
+            else ++I2;
+        }
+        if (M > 20) {
+            double I5 = I1 + 1e-6;
+            double I6 = I2 + 1e-6;
+            double X8 = I3 + 1e-6;
+            double I8d = I4 + 1e-6;
+            double A = I5 / I6;
+            double B = X8 / I8d;
+            if (!(A > 1.5 || A < 0.5 || B > 1.5 || B < 0.5)) goto L910;
+        }
+        if (T == 1) goto L920;
+        if (J0 == 11111111) goto L920;
+        if (C == 1) goto L980;
+        {
+            double Z1 = J0 / 100.0;
+            int Z2 = static_cast<int>(Z1);
+            double Z3 = Z1 - Z2;
+            J2 = static_cast<int>(Z3 * 100);
+            if (M <= 30 && J2 == 11) goto L390;
+        }
+        {
+            double Z4 = J0 / 10000.0;
+            int Z5 = static_cast<int>(Z4);
+            double Z6 = Z4 - Z5;
+            J4 = static_cast<int>(Z6 * 10000);
+            double W8 = F0 / 10000.0;
+            int Z8 = static_cast<int>(W8);
+            double Z9 = W8 - Z8;
+            F4 = static_cast<int>(Z9 * 10000);
+            if (J4 == 1011 && F4 == 111) goto L930;
+        }
+        {
+            double Y1 = I2 + I4;
+            double Y2 = I1 + I2 + 3;
+            if (Y1 >= Y2) goto L910;
+        }
+        if (result == 1 && J == 0) goto L940;
+        if (D == 1) goto L995;
+        if (result == 0 && J == 0) goto L900;
+        if (result == 0 && J == 1) goto L910;
+        if (result != 0) goto L950;
+    L900:
+        F1 = result;
+        result = 0;
+        return Move::COOPERATE;
+    L910:
+        F1 = result;
+        result = 1;
+        D = 0;
+        return Move::DEFECT;
+    L920:
+        T = 1;
+        result = J;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    L930:
+        C = 1;
+        goto L981;
+    L940:
+        F1 = result;
+        result = 1;
+        D = 0;
+        return Move::DEFECT;
+    L950:
+        F1 = result;
+        result = 1;
+        D = 1;
+        return Move::DEFECT;
+    L980:
+        C = 0;
+    L981:
+        F1 = result;
+        result = 0;
+        return Move::COOPERATE;
+    L995:
+        F1 = result;
+        result = 0;
+        D = 0;
+        return Move::COOPERATE;
+    L390:
+        if (J != 0) goto L400;
+        goto L900;
+    L400:
+        goto L910;
+    }
+};
+
+class K86R : public IStrategy {
+private:
+    int IOPPNT[999];
+public:
+    void reset() override {
+        for (int i = 0; i < 999; ++i) IOPPNT[i] = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        IOPPNT[M-1] = J;
+        int MYOLD = JA;
+        if (M <= 2) return Move::COOPERATE;
+        if (M <= 7) return (J == 1) ? Move::DEFECT : Move::COOPERATE;
+        int IPREV7 = 0;
+        for (int i = M - 7; i <= M - 1; ++i) IPREV7 += IOPPNT[i-1];
+        int result;
+        if (MYOLD == 0) {
+            result = (IPREV7 > 2) ? 1 : 0;
+        } else {
+            result = (IPREV7 > 1) ? 1 : 0;
+        }
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K87R : public IStrategy {
+private:
+    int Z = 0, H = 0;
+    double Q6 = 0.5;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K87R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        Z = 0; H = 0; Q6 = 0.5;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        double R = dist(rng);
+        if (M == 1) {
+            Z = 0; Q6 = 0.5; H = 0;
+            return Move::COOPERATE;
+        }
+        int S = 2 * J + H + 1;
+        if (Z == 1) goto L630;
+        if (J == 0) goto L692;
+        Z = 1;
+    L630:
+        if (S > 1) {
+            if (S == 4) Q6 = 0.74 * Q6 + 0.104;
+            else Q6 = 0.5 * Q6;
+        } else {
+            Q6 = Q6 * 0.57 + 0.43;
+        }
+        H = 1;
+        if (R > Q6) {
+            return Move::DEFECT;
+        } else {
+            goto L692;
+        }
+    L692:
+        H = 0;
+        return Move::COOPERATE;
+    }
+};
+
+class K88R : public IStrategy {
+private:
+    int MMC = 0, LMV = 0, MP = 0, MMV = 0, MP2 = 0, MMD = 1, DFLG = 0;
+    double PRC = 0.0, PRD = 0.0;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K88R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        MMC = 0; LMV = 0; MP = 0; MMV = 0; MP2 = 0; MMD = 1; DFLG = 0;
+        PRC = 0.0; PRD = 0.0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        double R = dist(rng);
+        if (M == 1) {
+            MMC = 0; LMV = 0; MP = 0; MMV = 0; MP2 = 0; MMD = 1; DFLG = 0;
+            return Move::COOPERATE;
+        }
+        if (M >= 2) {
+            if (MMV == 0) {
+                ++MMC;
+                MP += J;
+                PRC = static_cast<double>(MP) / MMC;
+            } else {
+                ++MMD;
+                MP2 += J;
+                PRD = static_cast<double>(MP2) / MMD;
+            }
+        }
+        int result = 0;
+        if (M <= 4) {
+            result = 0;
+        } else if (J == 1 && DFLG == 0) {
+            DFLG = 1;
+            result = 0;
+        } else {
+            if (MMV == 0 && R < PRC) result = 1;
+            if (MMV == 1 && R < PRD) result = 1;
+        }
+        MMV = LMV;
+        LMV = result;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K89R : public IStrategy {
+private:
+    int SC[7], SL[7], TM[7];
+    int ST[5], GT[5];
+    int CN, CSRC, MYLM, HLM;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+public:
+    K89R() : rng(std::random_device{}()), dist(0.0, 1.0) {}
+    void reset() override {
+        for (int i = 1; i <= 6; ++i) {
+            SC[i] = 0;  SL[i] = 1;  TM[i] = 0;
+        }
+        for (int i = 0; i < 5; ++i) { ST[i] = 0; GT[i] = 0; }
+        CN = 10;  CSRC = 5;  MYLM = 1;  HLM = 0;
+        rng.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+
+        if (M == 1) {
+            reset();
+            result = 0;
+            return Move::COOPERATE;
+        }
+
+        int CODE = CN / 10;
+        if (CODE < 1 || CODE > 6) {
+            result = 0;
+            return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+        }
+
+        if (10 * CODE == CN)
+            SC[CODE] = compute_score(my_history, opp_history);
+
+        if (SL[CODE] == 1) {
+            ++CN;
+            ++TM[CODE];
+            switch (CODE) {
+                case 1: result = 0; break;
+                case 2: result = 1; break;
+                case 3: result = 1 - MYLM; MYLM = result; break;
+                case 4: result = (J == 1) ? 1 : 0; break;
+                case 5: result = (J == 1 && HLM == 1) ? 1 : 0; HLM = J; break;
+                case 6: {
+                    int SGT = 0;
+                    for (int i = 1; i <= 5; ++i) {
+                        ST[i-1] = SC[i+1] - SC[i];
+                        SGT += ST[i-1];
+                        GT[i-1] += ST[i-1];
+                    }
+                    double MEAN = static_cast<double>(SGT) / CSRC;
+                    double AMEAN = 9.0 * MEAN / 10.0;
+                    CSRC = 0;
+                    for (int i = 1; i <= 5; ++i) {
+                        if (SL[i] == 1) {
+                            if (ST[i-1] < AMEAN) SL[i] = 0;
+                        } else {
+                            if (10.0 * GT[i-1] / TM[i] > AMEAN) SL[i] = 1;
+                        }
+                        if (SL[i] == 1) ++CSRC;
+                    }
+                    CN = 10;
+                    result = 0;
+                } break;
+                default: result = 0;
+            }
+        } else {
+            CN += 10;
+        }
+
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class K91R : public IStrategy {
+private:
+    double X, PX, Y, PY, Z, PZ, W, PW;
+    double QC[4], QN[4];
+    int IPOL[11][4];
+    int IOLD, N;
+public:
+    K91R() {
+        reset();
+    }
+    void reset() override {
+        X = 0.999; PX = 0.001;
+        Y = 0.001; PY = 0.999;
+        Z = 0.999; PZ = 0.001;
+        W = 0.001; PW = 0.999;
+        QC[0] = 1.999; QC[1] = 1.999; QC[2] = 0.001; QC[3] = 0.001;
+        QN[0] = 2; QN[1] = 2; QN[2] = 2; QN[3] = 2;
+        int ipol_data[44] = {0,0,0,0, 1,1,1,1,1,1,1, 0,1,1,1, 0,0,0,1,1,1,1, 0,0,0,1, 0,0,1,0,0,1,1, 0,0,1,0,0,1,0,0,1,0,1};
+        int idx = 0;
+        for (int i = 0; i < 11; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                IPOL[i][j] = ipol_data[idx++];
+            }
+        }
+        IOLD = 0;
+        N = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        int result = JA;
+        if (M == 1) {
+            IOLD = 0;
+            N = 0;
+            result = 0;
+            return Move::COOPERATE;
+        }
+        if (M > 2) {
+            if (J == 0) QC[N] += 1;
+            QN[N] += 1;
+            switch (N) {
+                case 0: X = QC[0] / QN[0]; PX = 1 - X; break;
+                case 1: Z = QC[1] / QN[1]; PZ = 1 - Z; break;
+                case 2: Y = QC[2] / QN[2]; PY = 1 - Y; break;
+                case 3: W = QC[3] / QN[3]; break;
+            }
+        }
+        double E[11];
+        E[0] = (3*Z) / (Z + PX);
+        E[1] = (3*(Y*Z + W*PZ) + 5*Z*PX + PX*PZ) / (Y*Z + W*PZ + PX + Z*PX + PX*PZ);
+        E[2] = (3*W*Y + 5*W*PX + PX*PZ) / (W*Y + 2*W*PX + PX*PZ);
+        E[3] = (3*W*PY + 5*Z*PX + PX*PY) / (W*PY + PX*PY + Z*PX + PX*PY);
+        E[4] = (3*Z + 5*X*Z + Z*PX) / (1 - X*Y - W*PX + 2*Z);
+        E[5] = (8*W*Z + Z*PX) / (2*W*Z + W*PY + Z*PX);
+        E[6] = (3*Z*PY + 5*X*Z + Z*PY) / (2*Z*PY + PW*PY + X*Z);
+        E[7] = (3*(Y*Z + W*PZ) + 5*(Z*PW + W*X) + 1 - X*Y - Z*PY) / (Y*Z + W*PZ + 2 - 2*X*Y - W*PX + Z*PW + W*X - Z*PY);
+        E[8] = (3*W*Y + 5*W + 1 - X*Y - Z*PY) / (2*W + 1 - X*Y - Z*PY);
+        E[9] = (3*W*PY + 5*(Z*PW + W*X) + PY) / (PY + Z*PW + W*X + PY);
+        E[10] = (5*W + PY) / (W + PY);
+        int IBEST = 0;
+        double BESTE = E[0];
+        for (int i = 1; i < 11; ++i) {
+            if (E[i] > BESTE) {
+                BESTE = E[i];
+                IBEST = i;
+            }
+        }
+        N = 2 * IOLD + J;
+        result = IPOL[IBEST][N];
+        IOLD = result;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class KPavlovC : public IStrategy {
+private:
+    int last_own = 0;
+public:
+    void reset() override { last_own = 0; }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int M = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++M; tmp >>= 1; }
+        ++M;
+        int J = (opp_history & 1) ? 1 : 0;
+        int JA = (my_history & 1) ? 1 : 0;
+        (void)JA;
+        if (M == 1) {
+            last_own = 0;
+            return Move::COOPERATE;
+        }
+        int result = (J == last_own) ? 0 : 1;
+        last_own = result;
+        return (result == 1) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
 
 #endif
