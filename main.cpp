@@ -58,9 +58,14 @@ int main() {
         StrategyType::K36R,
         StrategyType::K37R,
         StrategyType::K38R,
-        StrategyType::K39R
+        StrategyType::K39R,
+        StrategyType::K40R,
+        StrategyType::K41R,
+        StrategyType::K42R,
+        StrategyType::K43R,
+        StrategyType::K44R
     };
-    const int ROUNDS = 800;
+    const int ROUNDS = 500;
     const int NUM_STRATS = strategies.size();
     std::cout << "=== AMOUNT OF STRATEGIES ===" << std::endl;
     std::cout << "There are " << NUM_STRATS << " strategies" << std::endl;
