@@ -95,6 +95,16 @@ int main() {
     strategies.push_back(std::make_unique<K91R>());
     strategies.push_back(std::make_unique<KPavlovC>());
 
+    strategies.push_back(std::make_unique<Adaptive>());
+    strategies.push_back(std::make_unique<AdaptorBrief>());
+    strategies.push_back(std::make_unique<AdaptorLong>());
+    strategies.push_back(std::make_unique<Alternator>());
+    strategies.push_back(std::make_unique<EvolvedANN>());
+    strategies.push_back(std::make_unique<EvolvedANN5>());
+    strategies.push_back(std::make_unique<EvolvedANNNoise05>());
+    strategies.push_back(std::make_unique<APavlov2006>());
+    strategies.push_back(std::make_unique<APavlov2011>());
+    strategies.push_back(std::make_unique<Appeaser>());
 
     const int ROUNDS = 500;
     const int NUM = strategies.size();
