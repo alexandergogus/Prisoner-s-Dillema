@@ -131,86 +131,6 @@ public:
     }
 };
 
-class TidemanChieruzzi : public IStrategy {
-private:
-    std::mt19937 rng_;
-    std::bernoulli_distribution coop_prob_;
-public:
-    TidemanChieruzzi() : rng_(std::random_device{}()), coop_prob_(0.85) {}
-    void reset() override { rng_.seed(std::random_device{}()); }
-    Move getMove(uint64_t opp_history, uint64_t my_history) override {
-        int opp_defects = std::bitset<64>(opp_history).count();
-        int my_defects = std::bitset<64>(my_history).count();
-        int rounds = 0;
-        uint64_t tmp = opp_history;
-        while (tmp) { ++rounds; tmp >>= 1; }
-        if (rounds == 0) return Move::DEFECT;
-        bool last_opp = opp_history & 1;
-        if (opp_defects >= 5 && my_defects <= opp_defects - 3) return Move::DEFECT;
-        int consecutive_coop = 0;
-        uint64_t hist = opp_history;
-        while (hist && !(hist & 1)) { ++consecutive_coop; hist >>= 1; }
-        if (consecutive_coop >= 3) {
-            return coop_prob_(rng_) ? Move::COOPERATE : Move::DEFECT;
-        }
-        if (last_opp) {
-            uint64_t prev_two = (opp_history >> 1) & 3;
-            if (prev_two == 0) return Move::COOPERATE;
-            return Move::DEFECT;
-        }
-        return Move::COOPERATE;
-    }
-};
-
-class Nydegger : public IStrategy {
-private:
-    static const uint8_t table[64];
-public:
-    void reset() override {}
-    Move getMove(uint64_t opp_history, uint64_t my_history) override {
-        int rounds = 0;
-        uint64_t tmp = opp_history;
-        while (tmp) { ++rounds; tmp >>= 1; }
-        if (rounds == 0) return Move::COOPERATE;
-        if (rounds == 1) return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
-        if (rounds == 2) return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
-        int opp3 = opp_history & 0b111;
-        int my3 = my_history & 0b111;
-        int index = (my3 << 3) | opp3;
-        return table[index] ? Move::DEFECT : Move::COOPERATE;
-    }
-};
-const uint8_t Nydegger::table[64] = {
-    0,0,0,1, 0,0,1,1,
-    0,0,1,1, 0,1,1,1,
-    0,1,1,1, 1,1,1,1,
-    0,1,1,1, 1,1,1,1,
-    0,0,1,1, 1,1,1,1,
-    0,0,1,1, 1,1,1,1,
-    0,1,1,1, 1,1,1,1,
-    1,1,1,1, 1,1,1,1
-};
-
-class Grogman : public IStrategy {
-private:
-    std::mt19937 rng_;
-    std::bernoulli_distribution forgive_;
-public:
-    Grogman() : rng_(std::random_device{}()), forgive_(2.0/7.0) {}
-    void reset() override { rng_.seed(std::random_device{}()); }
-    Move getMove(uint64_t opp_history, uint64_t my_history) override {
-        int round = 0;
-        uint64_t tmp = opp_history;
-        while (tmp) { ++round; tmp >>= 1; }
-        if (round < 2) return Move::COOPERATE;
-        if (round < 7) return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
-        bool last_me = my_history & 1;
-        bool last_opp = opp_history & 1;
-        if (last_me == last_opp) return Move::COOPERATE;
-        return forgive_(rng_) ? Move::COOPERATE : Move::DEFECT;
-    }
-};
-
 class Shubik : public IStrategy {
 private:
     int grudge_level_ = 1;
@@ -244,23 +164,6 @@ public:
             return Move::DEFECT;
         }
         return Move::COOPERATE;
-    }
-};
-
-class SteinRapoport : public IStrategy {
-public:
-    void reset() override {}
-    Move getMove(uint64_t opp_history, uint64_t my_history) override {
-        int round = 0;
-        uint64_t tmp = opp_history;
-        while (tmp) { ++round; tmp >>= 1; }
-        if (round < 4) return Move::COOPERATE;
-        int total_rounds = 0;
-        tmp = my_history;
-        while (tmp) { ++total_rounds; tmp >>= 1; }
-        total_rounds = round + 1;
-        if (round >= total_rounds - 2) return Move::DEFECT;
-        return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
     }
 };
 
@@ -332,94 +235,6 @@ public:
             return Move::DEFECT;
         }
         return Move::COOPERATE;
-    }
-};
-
-class FirstByDowning : public IStrategy {
-private:
-    int opponent_coop_after_my_coop_ = 0;
-    int opponent_coop_after_my_defect_ = 0;
-    int total_my_coop_ = 0;
-    int total_my_defect_ = 0;
-public:
-    void reset() override {
-        opponent_coop_after_my_coop_ = 0;
-        opponent_coop_after_my_defect_ = 0;
-        total_my_coop_ = 0;
-        total_my_defect_ = 0;
-    }
-    Move getMove(uint64_t opp_history, uint64_t my_history) override {
-        int round = 0;
-        uint64_t tmp = opp_history;
-        while (tmp) { ++round; tmp >>= 1; }
-        if (round == 0) {
-            total_my_coop_ = 1;
-            total_my_defect_ = 1;
-            opponent_coop_after_my_coop_ = 0;
-            opponent_coop_after_my_defect_ = 0;
-            return Move::DEFECT;
-        }
-        if (round == 1) {
-            bool opp_last = opp_history & 1;
-            if (!opp_last) opponent_coop_after_my_coop_++;
-            total_my_coop_++;
-            total_my_defect_++;
-            return Move::DEFECT;
-        }
-        bool my_prev = (my_history >> 1) & 1;
-        bool opp_prev = (opp_history >> 1) & 1;
-        if (!my_prev) {
-            total_my_coop_++;
-            if (!opp_prev) opponent_coop_after_my_coop_++;
-        } else {
-            total_my_defect_++;
-            if (!opp_prev) opponent_coop_after_my_defect_++;
-        }
-        double alpha = opponent_coop_after_my_coop_ / static_cast<double>(total_my_coop_);
-        double beta  = opponent_coop_after_my_defect_ / static_cast<double>(total_my_defect_);
-        const int R = 3, P = 1, S = 0, T = 5;
-        double coop_exp = alpha * R + (1 - alpha) * S;
-        double defect_exp = beta * T + (1 - beta) * P;
-        if (coop_exp > defect_exp) return Move::COOPERATE;
-        if (coop_exp < defect_exp) return Move::DEFECT;
-        bool my_last = my_history & 1;
-        return my_last ? Move::COOPERATE : Move::DEFECT;
-    }
-};
-
-class Feld : public IStrategy {
-private:
-    std::mt19937 rng_;
-public:
-    Feld() : rng_(std::random_device{}()) {}
-    void reset() override { rng_.seed(std::random_device{}()); }
-    Move getMove(uint64_t opp_history, uint64_t) override {
-        int rounds = 0, opp_defects = 0;
-        uint64_t hist = opp_history;
-        while (hist) {
-            if (hist & 1) opp_defects++;
-            rounds++;
-            hist >>= 1;
-        }
-        if (rounds == 0) return Move::COOPERATE;
-        bool last_opp = opp_history & 1;
-        if (!last_opp) return Move::COOPERATE;
-        double prob = static_cast<double>(opp_defects) / rounds;
-        std::bernoulli_distribution dist(prob);
-        return dist(rng_) ? Move::DEFECT : Move::COOPERATE;
-    }
-};
-
-class Tullock : public IStrategy {
-public:
-    void reset() override {}
-    Move getMove(uint64_t opp_history, uint64_t) override {
-        int rounds = 0;
-        uint64_t tmp = opp_history;
-        while (tmp) { ++rounds; tmp >>= 1; }
-        if (rounds < 5) return Move::COOPERATE;
-        if (rounds == 5) return Move::DEFECT;
-        return (opp_history & 1) ? Move::DEFECT : Move::COOPERATE;
     }
 };
 
@@ -4094,6 +3909,641 @@ public:
         } else {
             return last_my_defect ? Move::DEFECT : Move::COOPERATE;
         }
+    }
+};
+
+class AverageCopier : public IStrategy {
+private:
+    std::mt19937 rng_;
+public:
+    AverageCopier() : rng_(std::random_device{}()) {}
+    void reset() override {
+        rng_.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int len = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) {
+            ++len;
+            tmp >>= 1;
+        }
+        if (len == 0) {
+            std::bernoulli_distribution dist(0.5);
+            return dist(rng_) ? Move::COOPERATE : Move::DEFECT;
+        }
+        int coop = 0;
+        tmp = opp_history;
+        for (int i = 0; i < len; ++i) {
+            if ((tmp & 1ULL) == 0) ++coop;
+            tmp >>= 1;
+        }
+        double p = static_cast<double>(coop) / len;
+        std::bernoulli_distribution dist(p);
+        return dist(rng_) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class NiceAverageCopier : public IStrategy {
+private:
+    std::mt19937 rng_;
+public:
+    NiceAverageCopier() : rng_(std::random_device{}()) {}
+    void reset() override {
+        rng_.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int len = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) {
+            ++len;
+            tmp >>= 1;
+        }
+        if (len == 0) {
+            return Move::COOPERATE;
+        }
+        int coop = 0;
+        tmp = opp_history;
+        for (int i = 0; i < len; ++i) {
+            if ((tmp & 1ULL) == 0) ++coop;
+            tmp >>= 1;
+        }
+        double p = static_cast<double>(coop) / len;
+        std::bernoulli_distribution dist(p);
+        return dist(rng_) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class FirstByDowning : public IStrategy {
+private:
+    int opponent_coop_after_my_coop_ = 0;
+    int opponent_coop_after_my_defect_ = 0;
+    int total_my_coop_ = 0;
+    int total_my_defect_ = 0;
+    Move last_move_ = Move::COOPERATE;
+public:
+    void reset() override {
+        opponent_coop_after_my_coop_ = 0;
+        opponent_coop_after_my_defect_ = 0;
+        total_my_coop_ = 0;
+        total_my_defect_ = 0;
+        last_move_ = Move::COOPERATE;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        ++round;
+        if (round == 1) {
+            last_move_ = Move::DEFECT;
+            return Move::DEFECT;
+        }
+        if (round == 2) {
+            bool opp_first = opp_history & 1ULL;
+            if (!opp_first) opponent_coop_after_my_coop_++;
+            total_my_coop_ = 1;
+            total_my_defect_ = 2;
+            last_move_ = Move::DEFECT;
+            return Move::DEFECT;
+        }
+        bool my_prev = (my_history >> 1) & 1ULL;
+        bool opp_prev = (opp_history >> 1) & 1ULL;
+        if (!my_prev) {
+            total_my_coop_++;
+            if (!opp_prev) opponent_coop_after_my_coop_++;
+        } else {
+            total_my_defect_++;
+            if (!opp_prev) opponent_coop_after_my_defect_++;
+        }
+        double alpha = static_cast<double>(opponent_coop_after_my_coop_) / (total_my_coop_ + 1);
+        double beta = static_cast<double>(opponent_coop_after_my_defect_) / std::max(total_my_defect_, 2);
+        const int R = 3, P = 1, S = 0, T = 5;
+        double E_C = alpha * R + (1 - alpha) * S;
+        double E_D = beta * T + (1 - beta) * P;
+        Move move;
+        if (E_C > E_D) move = Move::COOPERATE;
+        else if (E_C < E_D) move = Move::DEFECT;
+        else move = (last_move_ == Move::COOPERATE) ? Move::DEFECT : Move::COOPERATE;
+        last_move_ = move;
+        return move;
+    }
+};
+
+class FirstByFeld : public IStrategy {
+private:
+    std::mt19937 rng_;
+    double start_prob_ = 1.0;
+    double end_prob_ = 0.5;
+    int decay_rounds_ = 200;
+public:
+    FirstByFeld() : rng_(std::random_device{}()) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round == 0) return Move::COOPERATE;
+        bool opp_last = opp_history & 1ULL;
+        if (opp_last) return Move::DEFECT;
+        double p = start_prob_ + (end_prob_ - start_prob_) * (round / static_cast<double>(decay_rounds_));
+        p = std::max(p, end_prob_);
+        std::bernoulli_distribution dist(p);
+        return dist(rng_) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class FirstByGrofman : public IStrategy {
+private:
+    std::mt19937 rng_;
+public:
+    FirstByGrofman() : rng_(std::random_device{}()) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        if (my_history == 0) return Move::COOPERATE;
+        bool my_last = my_history & 1ULL;
+        bool opp_last = opp_history & 1ULL;
+        if (my_last == opp_last) return Move::COOPERATE;
+        std::bernoulli_distribution dist(2.0 / 7.0);
+        return dist(rng_) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class FirstByNydegger : public IStrategy {
+private:
+    static const int A_set_[19];
+    int score_map_[2][2];
+public:
+    FirstByNydegger() {
+        score_map_[0][0] = 0; score_map_[0][1] = 2;
+        score_map_[1][0] = 1; score_map_[1][1] = 3;
+    }
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round == 0) return Move::COOPERATE;
+        if (round == 1) {
+            return (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+        }
+        if (round == 2) {
+            bool first = (opp_history >> 1) & 1ULL;
+            bool second = opp_history & 1ULL;
+            if (first && !second) return Move::DEFECT;
+            return second ? Move::DEFECT : Move::COOPERATE;
+        }
+        uint64_t m = my_history;
+        uint64_t o = opp_history;
+        int a = 0;
+        int weights[3] = {16, 4, 1};
+        for (int i = 0; i < 3; ++i) {
+            bool my_move = m & 1ULL;
+            bool opp_move = o & 1ULL;
+            a += weights[i] * score_map_[my_move ? 1 : 0][opp_move ? 1 : 0];
+            m >>= 1; o >>= 1;
+        }
+        for (int i = 0; i < 19; ++i) if (a == A_set_[i]) return Move::DEFECT;
+        return Move::COOPERATE;
+    }
+};
+const int FirstByNydegger::A_set_[19] = {1,6,7,17,22,23,26,29,30,31,33,38,39,45,49,54,55,58,61};
+
+class FirstBySteinAndRapoport : public IStrategy {
+private:
+    bool opponent_is_random_ = false;
+    bool is_random(uint64_t opp_history, int rounds) {
+        int def = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { if (tmp & 1ULL) ++def; tmp >>= 1; }
+        int coop = rounds - def;
+        double expected = rounds * 0.5;
+        double chi2 = ((coop - expected) * (coop - expected) / expected) +
+                      ((def - expected) * (def - expected) / expected);
+        return chi2 < 3.841;
+    }
+public:
+    void reset() override { opponent_is_random_ = false; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        ++round;
+        if (round <= 4) return Move::COOPERATE;
+        if (round >= 499) return Move::DEFECT;
+        if (round < 15) {
+            return (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+        }
+        if (round % 15 == 0) {
+            opponent_is_random_ = is_random(opp_history, round - 1);
+        }
+        if (opponent_is_random_) return Move::DEFECT;
+        return (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class FirstByTidemanAndChieruzzi : public IStrategy {
+private:
+    bool is_retaliating_ = false;
+    int retaliation_length_ = 0;
+    int retaliation_remaining_ = 0;
+    int current_score_ = 0;
+    int opponent_score_ = 0;
+    int last_fresh_start_ = 0;
+    bool fresh_start_ = false;
+    int remembered_opp_defections_ = 0;
+    void decrease_retaliation() {
+        if (is_retaliating_) {
+            --retaliation_remaining_;
+            if (retaliation_remaining_ == 0) is_retaliating_ = false;
+        }
+    }
+    void fresh_start_reset() {
+        is_retaliating_ = false;
+        retaliation_length_ = 0;
+        retaliation_remaining_ = 0;
+        remembered_opp_defections_ = 0;
+    }
+    void update_scores(Move my, Move opp) {
+        int payoff[2][2] = {{3,0},{5,1}};
+        current_score_ += payoff[my == Move::DEFECT ? 1 : 0][opp == Move::DEFECT ? 1 : 0];
+        opponent_score_ += payoff[opp == Move::DEFECT ? 1 : 0][my == Move::DEFECT ? 1 : 0];
+    }
+public:
+    void reset() override {
+        is_retaliating_ = false;
+        retaliation_length_ = 0;
+        retaliation_remaining_ = 0;
+        current_score_ = 0;
+        opponent_score_ = 0;
+        last_fresh_start_ = 0;
+        fresh_start_ = false;
+        remembered_opp_defections_ = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        ++round;
+        if (round == 1) return Move::COOPERATE;
+        bool opp_last = opp_history & 1ULL;
+        if (opp_last) remembered_opp_defections_++;
+        bool my_last = my_history & 1ULL;
+        Move my_move = my_last ? Move::DEFECT : Move::COOPERATE;
+        Move opp_move = opp_last ? Move::DEFECT : Move::COOPERATE;
+        update_scores(my_move, opp_move);
+        if (fresh_start_) {
+            fresh_start_ = false;
+            return Move::COOPERATE;
+        }
+        bool valid_fresh_start = (last_fresh_start_ == 0) || (round - last_fresh_start_ >= 20);
+        if (valid_fresh_start) {
+            bool points_ok = (current_score_ - opponent_score_ >= 10);
+            bool rounds_ok = (500 - round >= 10);
+            bool opp_cooperating = !opp_last;
+            if (points_ok && rounds_ok && opp_cooperating) {
+                int N = round - 1;
+                double std_dev = std::sqrt(N * 0.5 * 0.5);
+                double lower = N * 0.5 - 3.0 * std_dev;
+                double upper = N * 0.5 + 3.0 * std_dev;
+                if (remembered_opp_defections_ <= lower || remembered_opp_defections_ >= upper) {
+                    last_fresh_start_ = round;
+                    fresh_start_reset();
+                    fresh_start_ = true;
+                    return Move::COOPERATE;
+                }
+            }
+        }
+        if (is_retaliating_) {
+            decrease_retaliation();
+            return Move::DEFECT;
+        }
+        if (opp_last) {
+            is_retaliating_ = true;
+            retaliation_length_++;
+            retaliation_remaining_ = retaliation_length_;
+            decrease_retaliation();
+            return Move::DEFECT;
+        }
+        return Move::COOPERATE;
+    }
+};
+
+class FirstByTullock : public IStrategy {
+private:
+    std::mt19937 rng_;
+public:
+    FirstByTullock() : rng_(std::random_device{}()) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round < 11) return Move::COOPERATE;
+        int coop = 0;
+        tmp = opp_history;
+        for (int i = 0; i < 10 && tmp; ++i) {
+            if ((tmp & 1ULL) == 0) ++coop;
+            tmp >>= 1;
+        }
+        double p = static_cast<double>(coop) / 10.0;
+        p = std::max(0.0, p - 0.10);
+        std::bernoulli_distribution dist(p);
+        return dist(rng_) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class FirstByAnonymous : public IStrategy {
+private:
+    std::mt19937 rng_;
+    std::uniform_real_distribution<double> uniform_;
+public:
+    FirstByAnonymous() : rng_(std::random_device{}()), uniform_(0.0, 1.0) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t, uint64_t) override {
+        double r = uniform_(rng_) * 0.4 + 0.3;
+        std::bernoulli_distribution dist(r);
+        return dist(rng_) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class SecondByChampion : public IStrategy {
+private:
+    std::mt19937 rng_;
+public:
+    SecondByChampion() : rng_(std::random_device{}()) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round < 10) return Move::COOPERATE;
+        if (round < 25) {
+            return (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+        }
+        bool opp_last_defect = opp_history & 1ULL;
+        if (!opp_last_defect) return Move::COOPERATE;
+        int defections = 0;
+        tmp = opp_history;
+        while (tmp) { if (tmp & 1ULL) ++defections; tmp >>= 1; }
+        double def_prop = static_cast<double>(defections) / round;
+        std::uniform_real_distribution<double> dist(0.0, 1.0);
+        double r = dist(rng_);
+        if (def_prop >= std::max(0.4, r)) return Move::DEFECT;
+        return Move::COOPERATE;
+    }
+};
+
+class SecondByEatherley : public IStrategy {
+private:
+    std::mt19937 rng_;
+public:
+    SecondByEatherley() : rng_(std::random_device{}()) {}
+    void reset() override { rng_.seed(std::random_device{}()); }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round == 0) return Move::COOPERATE;
+        bool opp_last_defect = opp_history & 1ULL;
+        if (!opp_last_defect) return Move::COOPERATE;
+        int defections = 0;
+        tmp = opp_history;
+        while (tmp) { if (tmp & 1ULL) ++defections; tmp >>= 1; }
+        double def_prop = static_cast<double>(defections) / round;
+        std::bernoulli_distribution dist(1.0 - def_prop);
+        return dist(rng_) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class SecondByTester : public IStrategy {
+private:
+    bool is_TFT_ = false;
+public:
+    void reset() override { is_TFT_ = false; }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round == 0) return Move::DEFECT;
+        if (is_TFT_) {
+            return (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+        }
+        bool opp_last_defect = opp_history & 1ULL;
+        if (opp_last_defect) {
+            is_TFT_ = true;
+            return Move::COOPERATE;
+        }
+        int my_len = 0;
+        tmp = my_history;
+        while (tmp) { ++my_len; tmp >>= 1; }
+        if (my_len == 1 || my_len == 2) return Move::COOPERATE;
+        bool my_last_defect = my_history & 1ULL;
+        return my_last_defect ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class SecondByGladstein : public IStrategy {
+private:
+    bool patsy_ = true;
+public:
+    void reset() override { patsy_ = true; }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        if (round == 0) return Move::DEFECT;
+        if (patsy_) {
+            bool opp_last_defect = opp_history & 1ULL;
+            if (opp_last_defect) {
+                patsy_ = false;
+                return Move::COOPERATE;
+            }
+            int my_len = 0;
+            tmp = my_history;
+            while (tmp) { ++my_len; tmp >>= 1; }
+            int my_defections = 0;
+            tmp = my_history;
+            while (tmp) { if (tmp & 1ULL) ++my_defections; tmp >>= 1; }
+            int my_cooperations = my_len - my_defections;
+            double coop_ratio = static_cast<double>(my_cooperations) / my_len;
+            if (coop_ratio > 0.5) return Move::DEFECT;
+            return Move::COOPERATE;
+        } else {
+            return (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+        }
+    }
+};
+
+class SecondByBorufsen : public IStrategy {
+private:
+    int cd_counts_ = 0;
+    int cc_counts_ = 0;
+    int mutual_defect_streak_ = 0;
+    int echo_streak_ = 0;
+    bool flip_next_defect_ = false;
+    enum Mode { Normal, Defect } mode_ = Normal;
+    bool coming_from_defect_ = false;
+public:
+    void reset() override {
+        cd_counts_ = 0;
+        cc_counts_ = 0;
+        mutual_defect_streak_ = 0;
+        echo_streak_ = 0;
+        flip_next_defect_ = false;
+        mode_ = Normal;
+        coming_from_defect_ = false;
+    }
+    Move try_return(Move to_return) {
+        if (to_return == Move::COOPERATE) return Move::COOPERATE;
+        if (flip_next_defect_) {
+            flip_next_defect_ = false;
+            return Move::COOPERATE;
+        }
+        return Move::DEFECT;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++round; tmp >>= 1; }
+        ++round;
+        if (round == 1) return Move::COOPERATE;
+        bool opp_last_defect = opp_history & 1ULL;
+        bool my_last_defect = my_history & 1ULL;
+        if (round >= 3) {
+            bool opp_prev_defect = (opp_history >> 1) & 1ULL;
+            bool my_prev_defect = (my_history >> 1) & 1ULL;
+            if (!opp_prev_defect) {
+                if (!my_prev_defect) ++cc_counts_;
+                else ++cd_counts_;
+            }
+        }
+        if (round > 2 && round % 25 == 2) {
+            coming_from_defect_ = (mode_ == Defect);
+            mode_ = Normal;
+            int coops = cd_counts_ + cc_counts_;
+            if (coops < 3) mode_ = Defect;
+            if (coops >= 8 && coops <= 17 && static_cast<double>(cc_counts_) / coops < 0.7) mode_ = Defect;
+            cd_counts_ = 0;
+            cc_counts_ = 0;
+            if (mode_ == Defect) {
+                mutual_defect_streak_ = 0;
+                echo_streak_ = 0;
+                flip_next_defect_ = false;
+            }
+            if (mode_ == Normal && coming_from_defect_) return Move::DEFECT;
+        }
+        if (mode_ == Defect) return Move::DEFECT;
+        if (my_last_defect && opp_last_defect) {
+            ++mutual_defect_streak_;
+        } else {
+            mutual_defect_streak_ = 0;
+        }
+        if (mutual_defect_streak_ >= 3) {
+            mutual_defect_streak_ = 0;
+            echo_streak_ = 0;
+            return try_return(Move::COOPERATE);
+        }
+        bool my_two_ago_defect = false;
+        bool opp_two_ago_defect = false;
+        if (round >= 3) {
+            my_two_ago_defect = (my_history >> 1) & 1ULL;
+            opp_two_ago_defect = (opp_history >> 1) & 1ULL;
+        }
+        if (my_last_defect != opp_last_defect &&
+            my_last_defect == opp_two_ago_defect &&
+            opp_last_defect == my_two_ago_defect) {
+            ++echo_streak_;
+        } else {
+            echo_streak_ = 0;
+        }
+        if (echo_streak_ >= 3) {
+            mutual_defect_streak_ = 0;
+            echo_streak_ = 0;
+            flip_next_defect_ = true;
+        }
+        return try_return(opp_last_defect ? Move::DEFECT : Move::COOPERATE);
+    }
+};
+
+static constexpr int TOTAL_ROUNDS = 500;
+
+class BackStabber : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds_played = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) {
+            ++rounds_played;
+            tmp >>= 1;
+        }
+        int current_round = rounds_played + 1;
+        if (current_round >= TOTAL_ROUNDS - 1)
+            return Move::DEFECT;
+        int opp_defections = __builtin_popcountll(opp_history);
+        if (opp_defections > 3)
+            return Move::DEFECT;
+        return Move::COOPERATE;
+    }
+};
+
+class DoubleCrosser : public IStrategy {
+private:
+    bool opp_defected_first_7_ = false;
+public:
+    void reset() override {
+        opp_defected_first_7_ = false;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds_played = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) {
+            ++rounds_played;
+            tmp >>= 1;
+        }
+        int current_round = rounds_played + 1;
+        if (current_round >= TOTAL_ROUNDS - 1)
+            return Move::DEFECT;
+        if (current_round <= 7 && (opp_history & 1ULL) == 1ULL) {
+            opp_defected_first_7_ = true;
+        }
+        bool use_alt = !opp_defected_first_7_ &&
+                       current_round >= 8 &&
+                       current_round <= 180;
+        if (use_alt) {
+            if ((opp_history & 0x3ULL) == 0x3ULL)
+                return Move::DEFECT;
+            else
+                return Move::COOPERATE;
+        } else {
+            int opp_defections = __builtin_popcountll(opp_history);
+            if (opp_defections > 3)
+                return Move::DEFECT;
+            else
+                return Move::COOPERATE;
+        }
+    }
+};
+
+class BetterAndBetter : public IStrategy {
+private:
+    std::mt19937 rng_;
+public:
+    BetterAndBetter() : rng_(std::random_device{}()) {}
+    void reset() override {
+        rng_.seed(std::random_device{}());
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) {
+            ++rounds;
+            tmp >>= 1;
+        }
+        int current_round = rounds + 1;
+        double prob = static_cast<double>(current_round) / 1000.0;
+        if (prob > 1.0) prob = 1.0;
+        std::bernoulli_distribution dist(prob);
+        return dist(rng_) ? Move::DEFECT : Move::COOPERATE;
     }
 };
 
