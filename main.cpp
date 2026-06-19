@@ -24,16 +24,9 @@ int main() {
     strategies.push_back(std::make_unique<Pavlov>());
     strategies.push_back(std::make_unique<GenerousTitForTat>());
     strategies.push_back(std::make_unique<Average64>());
-    strategies.push_back(std::make_unique<TidemanChieruzzi>());
-    strategies.push_back(std::make_unique<Nydegger>());
-    strategies.push_back(std::make_unique<Grogman>());
     strategies.push_back(std::make_unique<Shubik>());
-    strategies.push_back(std::make_unique<SteinRapoport>());
     strategies.push_back(std::make_unique<Davis>());
     strategies.push_back(std::make_unique<Graaskamp>());
-    strategies.push_back(std::make_unique<FirstByDowning>());
-    strategies.push_back(std::make_unique<Feld>());
-    strategies.push_back(std::make_unique<Tullock>());
     strategies.push_back(std::make_unique<GRASR>());
 
     strategies.push_back(std::make_unique<K31R>());
@@ -105,6 +98,24 @@ int main() {
     strategies.push_back(std::make_unique<APavlov2006>());
     strategies.push_back(std::make_unique<APavlov2011>());
     strategies.push_back(std::make_unique<Appeaser>());
+    strategies.push_back(std::make_unique<AverageCopier>());
+    strategies.push_back(std::make_unique<NiceAverageCopier>());
+    strategies.push_back(std::make_unique<FirstByDowning>());
+    strategies.push_back(std::make_unique<FirstByFeld>());
+    strategies.push_back(std::make_unique<FirstByGrofman>());
+    strategies.push_back(std::make_unique<FirstByNydegger>());
+    strategies.push_back(std::make_unique<FirstBySteinAndRapoport>());
+    strategies.push_back(std::make_unique<FirstByTidemanAndChieruzzi>());
+    strategies.push_back(std::make_unique<FirstByTullock>());
+    strategies.push_back(std::make_unique<FirstByAnonymous>());
+    strategies.push_back(std::make_unique<SecondByChampion>());
+    strategies.push_back(std::make_unique<SecondByEatherley>());
+    strategies.push_back(std::make_unique<SecondByTester>());
+    strategies.push_back(std::make_unique<SecondByGladstein>());
+    strategies.push_back(std::make_unique<SecondByBorufsen>());
+    strategies.push_back(std::make_unique<BackStabber>());
+    strategies.push_back(std::make_unique<DoubleCrosser>());
+    strategies.push_back(std::make_unique<BetterAndBetter>());
 
     const int ROUNDS = 500;
     const int NUM = strategies.size();
