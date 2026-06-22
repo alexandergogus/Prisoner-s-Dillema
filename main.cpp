@@ -13,6 +13,7 @@ static int get_payoff(Move a, Move b) {
 int main() {
     std::vector<std::unique_ptr<IStrategy>> strategies;
 
+    //first 100 strategies
     strategies.push_back(std::make_unique<Holy>());
     strategies.push_back(std::make_unique<Traitor>());
     strategies.push_back(std::make_unique<TitForTat>());
@@ -116,6 +117,47 @@ int main() {
     strategies.push_back(std::make_unique<BackStabber>());
     strategies.push_back(std::make_unique<DoubleCrosser>());
     strategies.push_back(std::make_unique<BetterAndBetter>());
+
+    //next 100
+    strategies.push_back(std::make_unique<BushMosteller>());
+    strategies.push_back(std::make_unique<Calculator>());
+    strategies.push_back(std::make_unique<TrickyCooperator>());
+    strategies.push_back(std::make_unique<AntiCycler>());
+    strategies.push_back(std::make_unique<CyclerDC>());
+    strategies.push_back(std::make_unique<CyclerCCD>());
+    strategies.push_back(std::make_unique<CyclerDDC>());
+    strategies.push_back(std::make_unique<CyclerCCCD>());
+    strategies.push_back(std::make_unique<CyclerCCCCCD>());
+    strategies.push_back(std::make_unique<CyclerCCCDCD>());
+    strategies.push_back(std::make_unique<EvolvableCycler>());
+    strategies.push_back(std::make_unique<Darwin>());
+    strategies.push_back(std::make_unique<DBS>());
+    strategies.push_back(std::make_unique<TrickyDefector>());
+    strategies.push_back(std::make_unique<Doubler>());
+    strategies.push_back(std::make_unique<Fortress3>());
+    strategies.push_back(std::make_unique<Fortress4>());
+    strategies.push_back(std::make_unique<Predator>());
+    strategies.push_back(std::make_unique<Pun1>());
+    strategies.push_back(std::make_unique<Raider>());
+    strategies.push_back(std::make_unique<Ripoff>());
+    strategies.push_back(std::make_unique<UsuallyCooperates>());
+    strategies.push_back(std::make_unique<UsuallyDefects>());
+    strategies.push_back(std::make_unique<SolutionB1>());
+    strategies.push_back(std::make_unique<SolutionB5>());
+    strategies.push_back(std::make_unique<Thumper>());
+    strategies.push_back(std::make_unique<EvolvedFSM4>());
+    strategies.push_back(std::make_unique<EvolvedFSM16>());
+    strategies.push_back(std::make_unique<EvolvedFSM16Noise05>());
+    strategies.push_back(std::make_unique<TF1>());
+    strategies.push_back(std::make_unique<TF2>());
+    strategies.push_back(std::make_unique<TF3>());
+    strategies.push_back(std::make_unique<Forgiver>());
+    strategies.push_back(std::make_unique<ForgivingTitForTat>());
+    strategies.push_back(std::make_unique<PSOGamblerMem1>());
+    strategies.push_back(std::make_unique<PSOGambler1_1_1>());
+    strategies.push_back(std::make_unique<PSOGambler2_2_2>());
+    strategies.push_back(std::make_unique<PSOGambler2_2_2_Noise05>());
+    strategies.push_back(std::make_unique<ZDMem2>());
 
     const int ROUNDS = 500;
     const int NUM = strategies.size();
