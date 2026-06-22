@@ -2,6 +2,7 @@
 #define STRATEGIES_HPP
 
 #include "istrategy.hpp"
+#include "icheater_strategy.hpp"
 #include "move.hpp"
 #include <random>
 #include <bitset>
@@ -5799,6 +5800,374 @@ public:
         2.0/3.0, 1.0/11.0, 7.0/9.0, 1.0/10.0,
         3.0/4.0, 2.0/11.0, 7.0/9.0, 1.0/10.0
     }) {}
+};
+
+class Geller : public ICheaterStrategy {
+protected:
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+    Move opponent_move;
+public:
+    Geller() : rng(std::random_device{}()), dist(0.0, 1.0), opponent_move(Move::COOPERATE) {}
+    void reset() override { rng.seed(std::random_device{}()); opponent_move = Move::COOPERATE; }
+    void setOpponentMove(Move move) override { opponent_move = move; }
+    Move getMove(uint64_t, uint64_t) override { return opponent_move; }
+};
+
+class GellerCooperator : public Geller {
+public:
+    Move getMove(uint64_t opp_hist, uint64_t my_hist) override { return opponent_move; }
+};
+
+class GellerDefector : public Geller {
+public:
+    Move getMove(uint64_t opp_hist, uint64_t my_hist) override { return opponent_move; }
+};
+
+class GoByMajorityBase : public IStrategy {
+protected:
+    int memory;
+    bool soft;
+
+public:
+    GoByMajorityBase(int mem, bool s) : memory(mem), soft(s) {}
+
+    void reset() override {}
+
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        uint64_t hist = opp_history;
+        int len = 0;
+        while (hist) {
+            ++len;
+            hist >>= 1;
+        }
+
+        uint64_t relevant = opp_history;
+        if (memory > 0 && len > memory) {
+            relevant = opp_history & ((1ULL << memory) - 1);
+            len = memory;
+        }
+
+        int defections = __builtin_popcountll(relevant);
+        int cooperations = len - defections;
+
+        if (defections > cooperations) return Move::DEFECT;
+        if (defections == cooperations) {
+            return soft ? Move::COOPERATE : Move::DEFECT;
+        }
+        return Move::COOPERATE;
+    }
+};
+
+class GoByMajority : public GoByMajorityBase {
+public:
+    GoByMajority() : GoByMajorityBase(0, true) {}
+};
+
+class GoByMajority40 : public GoByMajorityBase {
+public:
+    GoByMajority40() : GoByMajorityBase(40, true) {}
+};
+
+class GoByMajority20 : public GoByMajorityBase {
+public:
+    GoByMajority20() : GoByMajorityBase(20, true) {}
+};
+
+class GoByMajority10 : public GoByMajorityBase {
+public:
+    GoByMajority10() : GoByMajorityBase(10, true) {}
+};
+
+class GoByMajority5 : public GoByMajorityBase {
+public:
+    GoByMajority5() : GoByMajorityBase(5, true) {}
+};
+
+class HardGoByMajority : public GoByMajorityBase {
+public:
+    HardGoByMajority() : GoByMajorityBase(0, false) {}
+};
+
+class HardGoByMajority40 : public GoByMajorityBase {
+public:
+    HardGoByMajority40() : GoByMajorityBase(40, false) {}
+};
+
+class HardGoByMajority20 : public GoByMajorityBase {
+public:
+    HardGoByMajority20() : GoByMajorityBase(20, false) {}
+};
+
+class HardGoByMajority10 : public GoByMajorityBase {
+public:
+    HardGoByMajority10() : GoByMajorityBase(10, false) {}
+};
+
+class HardGoByMajority5 : public GoByMajorityBase {
+public:
+    HardGoByMajority5() : GoByMajorityBase(5, false) {}
+};
+
+class GradualKiller : public IStrategy {
+private:
+    int move_index;
+    bool always_defect;
+    bool condition_checked;
+public:
+    GradualKiller() : move_index(0), always_defect(false), condition_checked(false) {}
+    void reset() override {
+        move_index = 0;
+        always_defect = false;
+        condition_checked = false;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (move_index < 7) {
+            Move m = (move_index < 5) ? Move::DEFECT : Move::COOPERATE;
+            ++move_index;
+            return m;
+        } else {
+            if (!condition_checked) {
+                if ((opp_history & 0x3ULL) == 0x3ULL) {
+                    always_defect = true;
+                } else {
+                    always_defect = false;
+                }
+                condition_checked = true;
+            }
+            ++move_index;
+            return always_defect ? Move::DEFECT : Move::COOPERATE;
+        }
+    }
+};
+
+class ForgetfulGrudger : public IStrategy {
+private:
+    int mem_length;
+    bool grudged;
+    int grudge_memory;
+public:
+    ForgetfulGrudger() : mem_length(10), grudged(false), grudge_memory(0) {}
+    void reset() override { grudged = false; grudge_memory = 0; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (grudge_memory == mem_length) {
+            grudge_memory = 0;
+            grudged = false;
+        }
+        if (opp_history & 1ULL) {
+            grudged = true;
+        }
+        if (grudged) {
+            ++grudge_memory;
+            return Move::DEFECT;
+        }
+        return Move::COOPERATE;
+    }
+};
+
+class OppositeGrudger : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        uint64_t hist = opp_history;
+        int len = 0;
+        while (hist) { ++len; hist >>= 1; }
+        for (int i = 0; i < len; ++i) {
+            if (((opp_history >> i) & 1ULL) == 0) {
+                return Move::COOPERATE;
+            }
+        }
+        return Move::DEFECT;
+    }
+};
+
+class Aggravater : public IStrategy {
+private:
+    bool ever_defected;
+public:
+    Aggravater() : ever_defected(false) {}
+    void reset() override { ever_defected = false; }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int len = 0;
+        uint64_t tmp = my_history;
+        while (tmp) { ++len; tmp >>= 1; }
+        if (len < 3) return Move::DEFECT;
+        if (opp_history != 0) ever_defected = true;
+        return ever_defected ? Move::DEFECT : Move::COOPERATE;
+    }
+};
+
+class SoftGrudger : public IStrategy {
+private:
+    bool grudged;
+    int grudge_memory;
+public:
+    SoftGrudger() : grudged(false), grudge_memory(0) {}
+    void reset() override { grudged = false; grudge_memory = 0; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (grudged) {
+            Move moves[] = {Move::DEFECT, Move::DEFECT, Move::DEFECT, Move::COOPERATE, Move::COOPERATE};
+            Move m = moves[grudge_memory];
+            ++grudge_memory;
+            if (grudge_memory == 5) {
+                grudged = false;
+                grudge_memory = 0;
+            }
+            return m;
+        }
+        if (opp_history & 1ULL) {
+            grudged = true;
+            return Move::DEFECT;
+        }
+        return Move::COOPERATE;
+    }
+};
+
+class GrudgerAlternator : public IStrategy {
+private:
+    bool ever_defected;
+public:
+    GrudgerAlternator() : ever_defected(false) {}
+    void reset() override { ever_defected = false; }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        if (opp_history != 0) ever_defected = true;
+        if (!ever_defected) return Move::COOPERATE;
+        int len = 0;
+        uint64_t tmp = my_history;
+        while (tmp) { ++len; tmp >>= 1; }
+        if (len == 0) return Move::COOPERATE;
+        bool last = my_history & 1ULL;
+        return last ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class EasyGo : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history != 0) return Move::COOPERATE;
+        return Move::DEFECT;
+    }
+};
+
+class GeneralSoftGrudger : public IStrategy {
+private:
+    int n, d, c;
+    bool grudged;
+    int grudge_memory;
+    std::vector<Move> grudge_pattern;
+public:
+    GeneralSoftGrudger(int n_ = 1, int d_ = 4, int c_ = 2)
+        : n(n_), d(d_), c(c_), grudged(false), grudge_memory(0) {
+        grudge_pattern.assign(d - 1, Move::DEFECT);
+        grudge_pattern.insert(grudge_pattern.end(), c, Move::COOPERATE);
+    }
+    void reset() override {
+        grudged = false;
+        grudge_memory = 0;
+    }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (grudged) {
+            Move m = grudge_pattern[grudge_memory];
+            ++grudge_memory;
+            if (grudge_memory == static_cast<int>(grudge_pattern.size())) {
+                grudged = false;
+                grudge_memory = 0;
+            }
+            return m;
+        }
+        int len = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++len; tmp >>= 1; }
+        if (len >= n) {
+            bool all_d = true;
+            for (int i = 0; i < n; ++i) {
+                if (((opp_history >> i) & 1ULL) == 0) {
+                    all_d = false;
+                    break;
+                }
+            }
+            if (all_d) {
+                grudged = true;
+                return Move::DEFECT;
+            }
+        }
+        return Move::COOPERATE;
+    }
+};
+
+class Grumpy : public IStrategy {
+private:
+    std::string initial_state;
+    std::string state;
+    int grumpy_threshold;
+    int nice_threshold;
+public:
+    Grumpy(const std::string& starting_state = "Nice", int grumpy_threshold = 10, int nice_threshold = -10)
+        : initial_state(starting_state), state(starting_state), grumpy_threshold(grumpy_threshold), nice_threshold(nice_threshold) {}
+    void reset() override { state = initial_state; }
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int defections = __builtin_popcountll(opp_history);
+        int cooperations = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++cooperations; tmp >>= 1; }
+        cooperations -= defections;
+        int grumpiness = defections - cooperations;
+        if (state == "Nice") {
+            if (grumpiness > grumpy_threshold) {
+                state = "Grumpy";
+                return Move::DEFECT;
+            }
+            return Move::COOPERATE;
+        } else {
+            if (grumpiness < nice_threshold) {
+                state = "Nice";
+                return Move::COOPERATE;
+            }
+            return Move::DEFECT;
+        }
+    }
+};
+
+class Handshake : public IStrategy {
+private:
+    std::vector<Move> initial_plays;
+    bool handshake_matched;
+    bool checked;
+public:
+    Handshake(const std::vector<Move>& init = {Move::COOPERATE, Move::DEFECT})
+        : initial_plays(init), handshake_matched(false), checked(false) {}
+    void reset() override {
+        handshake_matched = false;
+        checked = false;
+    }
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int my_len = 0;
+        uint64_t tmp = my_history;
+        while (tmp) { ++my_len; tmp >>= 1; }
+        if (my_len < static_cast<int>(initial_plays.size())) {
+            return initial_plays[my_len];
+        } else {
+            if (!checked) {
+                int opp_len = 0;
+                tmp = opp_history;
+                while (tmp) { ++opp_len; tmp >>= 1; }
+                int N = initial_plays.size();
+                bool match = true;
+                if (opp_len < N) match = false;
+                else {
+                    for (int i = 0; i < N; ++i) {
+                        bool bit = (opp_history >> (opp_len - 1 - i)) & 1ULL;
+                        Move opp_move = bit ? Move::DEFECT : Move::COOPERATE;
+                        if (opp_move != initial_plays[i]) { match = false; break; }
+                    }
+                }
+                handshake_matched = match;
+                checked = true;
+            }
+            return handshake_matched ? Move::COOPERATE : Move::DEFECT;
+        }
+    }
 };
 
 #endif
