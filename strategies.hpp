@@ -8,6 +8,9 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <cstdlib>
+#include <map>
+#include <utility>
 
 class Holy : public IStrategy {
 public:
@@ -4545,6 +4548,1257 @@ public:
         std::bernoulli_distribution dist(prob);
         return dist(rng_) ? Move::DEFECT : Move::COOPERATE;
     }
+};
+
+class BushMosteller : public IStrategy {
+private:
+    double c_prob_;
+    double d_prob_;
+    double aspiration_;
+    double learning_rate_;
+    double stimulus_;
+    double init_c_prob_;
+    double init_d_prob_;
+    std::mt19937 rng_;
+
+public:
+    BushMosteller(double c_prob = 0.5, double d_prob = 0.5,
+                  double divider = 3.0, double rate = 0.5)
+        : c_prob_(c_prob), d_prob_(d_prob), learning_rate_(rate),
+          stimulus_(0.0), init_c_prob_(c_prob), init_d_prob_(d_prob),
+          rng_(std::random_device{}()) {
+        aspiration_ = 5.0 / divider; // max payoff is 5 (T)
+    }
+
+    void reset() override {
+        c_prob_ = init_c_prob_;
+        d_prob_ = init_d_prob_;
+        stimulus_ = 0.0;
+        rng_.seed(std::random_device{}());
+    }
+
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        if (my_history == 0) {
+            double pC = c_prob_ / (c_prob_ + d_prob_);
+            std::bernoulli_distribution bern(pC);
+            return bern(rng_) ? Move::COOPERATE : Move::DEFECT;
+        }
+
+        bool my_last = my_history & 1ULL;
+        bool opp_last = opp_history & 1ULL;
+        int payoff;
+        if (!my_last && !opp_last) payoff = 3;
+        else if (!my_last && opp_last) payoff = 0;
+        else if (my_last && !opp_last) payoff = 5;
+        else payoff = 1;
+
+        double max_payoff = 5.0;
+        double denom = max_payoff - aspiration_;
+        if (denom < 1e-9) denom = 1.0;
+        stimulus_ = (payoff - aspiration_) / denom;
+        if (stimulus_ < -1.0) stimulus_ = -1.0;
+        if (stimulus_ > 1.0) stimulus_ = 1.0;
+
+        if (!my_last) {
+            if (stimulus_ >= 0)
+                c_prob_ += learning_rate_ * stimulus_ * (1.0 - c_prob_);
+            else
+                c_prob_ += learning_rate_ * stimulus_ * c_prob_;
+        } else {
+            if (stimulus_ >= 0)
+                d_prob_ += learning_rate_ * stimulus_ * (1.0 - d_prob_);
+            else
+                d_prob_ += learning_rate_ * stimulus_ * d_prob_;
+        }
+
+        if (c_prob_ < 0.0) c_prob_ = 0.0;
+        if (c_prob_ > 1.0) c_prob_ = 1.0;
+        if (d_prob_ < 0.0) d_prob_ = 0.0;
+        if (d_prob_ > 1.0) d_prob_ = 1.0;
+
+        double pC = c_prob_ / (c_prob_ + d_prob_);
+        if (pC < 0.0) pC = 0.0;
+        if (pC > 1.0) pC = 1.0;
+        std::bernoulli_distribution bern(pC);
+        return bern(rng_) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class Calculator : public IStrategy {
+private:
+    Joss joss_;
+    bool cycle_detected_;
+    bool checked_cycle_;
+
+    bool detect_cycle(uint64_t history, int length) {
+        if (length < 4) return false;
+        std::vector<int> moves(length);
+        for (int i = 0; i < length; ++i) {
+            moves[length - 1 - i] = (history >> i) & 1ULL;
+        }
+        for (int p = 2; p <= length / 2; ++p) {
+            bool periodic = true;
+            for (int i = 0; i < length - p; ++i) {
+                if (moves[i] != moves[i + p]) {
+                    periodic = false;
+                    break;
+                }
+            }
+            if (periodic) return true;
+        }
+        return false;
+    }
+
+public:
+    Calculator() : cycle_detected_(false), checked_cycle_(false) {}
+
+    void reset() override {
+        joss_.reset();
+        cycle_detected_ = false;
+        checked_cycle_ = false;
+    }
+
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int round = 0;
+        uint64_t tmp = my_history;
+        while (tmp) { ++round; tmp >>= 1; }
+
+        if (round < 20) {
+            return joss_.getMove(opp_history, my_history);
+        } else {
+            if (!checked_cycle_) {
+                cycle_detected_ = detect_cycle(opp_history, 20);
+                checked_cycle_ = true;
+            }
+            if (cycle_detected_) {
+                return Move::DEFECT;
+            } else {
+                return (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+            }
+        }
+    }
+};
+
+class TrickyCooperator : public IStrategy {
+private:
+    static constexpr int MIN_HISTORY = 3;
+    static constexpr int MAX_DEPTH = 10;
+
+public:
+    void reset() override {}
+
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int my_rounds = 0;
+        uint64_t tmp = my_history;
+        while (tmp) { ++my_rounds; tmp >>= 1; }
+
+        if (my_rounds >= MIN_HISTORY) {
+            uint64_t last10 = opp_history & ((1ULL << MAX_DEPTH) - 1);
+            if (last10 == 0) {
+                return Move::DEFECT;
+            }
+        }
+        return Move::COOPERATE;
+    }
+};
+
+class AntiCycler : public IStrategy {
+private:
+    Move first_[3];
+    int first_idx_;
+    int cycle_length_;
+    int cycle_counter_;
+
+public:
+    AntiCycler() : first_{Move::COOPERATE, Move::DEFECT, Move::DEFECT},
+                   first_idx_(0), cycle_length_(1), cycle_counter_(0) {}
+
+    void reset() override {
+        first_[0] = Move::COOPERATE;
+        first_[1] = Move::DEFECT;
+        first_[2] = Move::DEFECT;
+        first_idx_ = 0;
+        cycle_length_ = 1;
+        cycle_counter_ = 0;
+    }
+
+    Move getMove(uint64_t, uint64_t) override {
+        if (first_idx_ < 3) {
+            return first_[first_idx_++];
+        }
+        if (cycle_counter_ < cycle_length_) {
+            ++cycle_counter_;
+            return Move::COOPERATE;
+        } else {
+            ++cycle_length_;
+            cycle_counter_ = 0;
+            return Move::DEFECT;
+        }
+    }
+};
+
+class CyclerDC : public IStrategy {
+private:
+    static constexpr const char* CYCLE = "DC";
+    static constexpr size_t LEN = 2;
+    size_t idx_;
+public:
+    void reset() override { idx_ = 0; }
+    Move getMove(uint64_t, uint64_t) override {
+        char c = CYCLE[idx_];
+        idx_ = (idx_ + 1) % LEN;
+        return (c == 'C') ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class CyclerCCD : public IStrategy {
+private:
+    static constexpr const char* CYCLE = "CCD";
+    static constexpr size_t LEN = 3;
+    size_t idx_;
+public:
+    void reset() override { idx_ = 0; }
+    Move getMove(uint64_t, uint64_t) override {
+        char c = CYCLE[idx_];
+        idx_ = (idx_ + 1) % LEN;
+        return (c == 'C') ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class CyclerDDC : public IStrategy {
+private:
+    static constexpr const char* CYCLE = "DDC";
+    static constexpr size_t LEN = 3;
+    size_t idx_;
+public:
+    void reset() override { idx_ = 0; }
+    Move getMove(uint64_t, uint64_t) override {
+        char c = CYCLE[idx_];
+        idx_ = (idx_ + 1) % LEN;
+        return (c == 'C') ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class CyclerCCCD : public IStrategy {
+private:
+    static constexpr const char* CYCLE = "CCCD";
+    static constexpr size_t LEN = 4;
+    size_t idx_;
+public:
+    void reset() override { idx_ = 0; }
+    Move getMove(uint64_t, uint64_t) override {
+        char c = CYCLE[idx_];
+        idx_ = (idx_ + 1) % LEN;
+        return (c == 'C') ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class CyclerCCCCCD : public IStrategy {
+private:
+    static constexpr const char* CYCLE = "CCCCCD";
+    static constexpr size_t LEN = 6;
+    size_t idx_;
+public:
+    void reset() override { idx_ = 0; }
+    Move getMove(uint64_t, uint64_t) override {
+        char c = CYCLE[idx_];
+        idx_ = (idx_ + 1) % LEN;
+        return (c == 'C') ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class CyclerCCCDCD : public IStrategy {
+private:
+    static constexpr const char* CYCLE = "CCCDCD";
+    static constexpr size_t LEN = 6;
+    size_t idx_;
+public:
+    void reset() override { idx_ = 0; }
+    Move getMove(uint64_t, uint64_t) override {
+        char c = CYCLE[idx_];
+        idx_ = (idx_ + 1) % LEN;
+        return (c == 'C') ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class EvolvableCycler : public IStrategy {
+private:
+    std::string cycle_;
+    size_t idx_;
+public:
+    EvolvableCycler(const std::string& cycle = "CCD") : cycle_(cycle), idx_(0) {}
+    void reset() override { idx_ = 0; }
+    Move getMove(uint64_t, uint64_t) override {
+        char c = cycle_[idx_];
+        idx_ = (idx_ + 1) % cycle_.size();
+        return (c == 'C') ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class Darwin : public IStrategy {
+private:
+    static std::vector<Move> genome;
+    Move response_;
+
+public:
+    Darwin() : response_(Move::COOPERATE) {}
+
+    void reset() override {
+        if (!genome.empty()) {
+            genome[0] = Move::COOPERATE;
+        }
+        response_ = Move::COOPERATE;
+    }
+
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int trial = 0;
+        uint64_t tmp = my_history;
+        while (tmp) { ++trial; tmp >>= 1; }
+
+        if (trial > 0) {
+            bool my_last = my_history & 1ULL;
+            bool opp_last = opp_history & 1ULL;
+            int my_score = 0;
+            if (!my_last && !opp_last) my_score = 3;
+            else if (!my_last && opp_last) my_score = 0;
+            else if (my_last && !opp_last) my_score = 5;
+            else my_score = 1;
+
+            if (my_score < 3 && static_cast<int>(genome.size()) >= trial) {
+                Move prev = genome[trial - 1];
+                response_ = (prev == Move::COOPERATE) ? Move::DEFECT : Move::COOPERATE;
+            } else {
+                response_ = genome[trial - 1];
+            }
+            genome[trial - 1] = response_;
+        }
+
+        Move current;
+        if (trial < static_cast<int>(genome.size())) {
+            current = genome[trial];
+        } else {
+            current = (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+            genome.push_back(current);
+        }
+        return current;
+    }
+};
+
+std::vector<Move> Darwin::genome = {Move::COOPERATE};
+
+class DeterministicNode;
+
+class Node {
+public:
+    virtual ~Node() = default;
+    virtual bool is_stochastic() const = 0;
+};
+
+class StochasticNode : public Node {
+public:
+    double pC;
+    int depth;
+    Move own_action;
+
+    StochasticNode(Move own, double prob, int d)
+        : pC(prob), depth(d), own_action(own) {}
+
+    bool is_stochastic() const override { return true; }
+
+    std::pair<Node*, Node*> get_siblings();
+};
+
+class DeterministicNode : public Node {
+public:
+    Move action1, action2;
+    int depth;
+
+    DeterministicNode(Move a1, Move a2, int d)
+        : action1(a1), action2(a2), depth(d) {}
+
+    bool is_stochastic() const override { return false; }
+
+    int get_value() const {
+        if (action1 == Move::COOPERATE && action2 == Move::COOPERATE) return 3;
+        if (action1 == Move::COOPERATE && action2 == Move::DEFECT) return 0;
+        if (action1 == Move::DEFECT && action2 == Move::COOPERATE) return 5;
+        return 1;
+    }
+
+    std::pair<Node*, Node*> get_siblings(const std::map<std::pair<Move, Move>, double>& policy) {
+        double prob = policy.at({action1, action2});
+        StochasticNode* c_choice = new StochasticNode(Move::COOPERATE, prob, depth);
+        StochasticNode* d_choice = new StochasticNode(Move::DEFECT, prob, depth);
+        return {c_choice, d_choice};
+    }
+};
+
+std::pair<Node*, Node*> StochasticNode::get_siblings() {
+    DeterministicNode* c_choice = new DeterministicNode(own_action, Move::COOPERATE, depth + 1);
+    DeterministicNode* d_choice = new DeterministicNode(own_action, Move::DEFECT, depth + 1);
+    return {c_choice, d_choice};
+}
+
+static double minimax_tree_search(Node* node,
+                                  const std::map<std::pair<Move, Move>, double>& policy,
+                                  int max_depth) {
+    if (node->is_stochastic()) {
+        StochasticNode* sn = static_cast<StochasticNode*>(node);
+        auto sibs = sn->get_siblings();
+        double val = sn->pC * minimax_tree_search(sibs.first, policy, max_depth) +
+                     (1.0 - sn->pC) * minimax_tree_search(sibs.second, policy, max_depth);
+        delete sibs.first;
+        delete sibs.second;
+        return val;
+    } else {
+        DeterministicNode* dn = static_cast<DeterministicNode*>(node);
+        if (dn->depth == max_depth) {
+            return dn->get_value();
+        } else if (dn->depth == 0) {
+            auto sibs = dn->get_siblings(policy);
+            double valC = minimax_tree_search(sibs.first, policy, max_depth) + dn->get_value();
+            double valD = minimax_tree_search(sibs.second, policy, max_depth) + dn->get_value();
+            delete sibs.first;
+            delete sibs.second;
+            (void)valC;
+            (void)valD;
+            return 0.0;
+        } else {
+            auto sibs = dn->get_siblings(policy);
+            double a = minimax_tree_search(sibs.first, policy, max_depth);
+            double b = minimax_tree_search(sibs.second, policy, max_depth);
+            double val = std::max(a, b) + dn->get_value();
+            delete sibs.first;
+            delete sibs.second;
+            return val;
+        }
+    }
+}
+
+static Move move_gen(Move my_last, Move opp_last,
+                     const std::map<std::pair<Move, Move>, double>& policy,
+                     int depth_search_tree) {
+    DeterministicNode root(my_last, opp_last, 0);
+    auto sibs = root.get_siblings(policy);
+    double valC = minimax_tree_search(sibs.first, policy, depth_search_tree) + root.get_value();
+    double valD = minimax_tree_search(sibs.second, policy, depth_search_tree) + root.get_value();
+    delete sibs.first;
+    delete sibs.second;
+    return (valC >= valD) ? Move::COOPERATE : Move::DEFECT;
+}
+
+static std::map<std::pair<Move, Move>, double> create_policy(double pCC, double pCD, double pDC, double pDD) {
+    std::map<std::pair<Move, Move>, double> policy;
+    policy[{Move::COOPERATE, Move::COOPERATE}] = pCC;
+    policy[{Move::COOPERATE, Move::DEFECT}] = pCD;
+    policy[{Move::DEFECT, Move::COOPERATE}] = pDC;
+    policy[{Move::DEFECT, Move::DEFECT}] = pDD;
+    return policy;
+}
+
+class DBS : public IStrategy {
+private:
+    double alpha;
+    int promotion_threshold;
+    int violation_threshold;
+    int reject_threshold;
+    int tree_depth;
+
+    std::map<std::pair<Move, Move>, double> Rd;
+    std::map<std::pair<Move, Move>, double> Rc;
+    std::map<std::pair<Move, Move>, double> Pi;
+    std::map<std::pair<Move, Move>, int> violation_counts;
+    int v;
+
+    std::map<std::pair<Move, Move>, std::pair<std::vector<int>, std::vector<int>>> history_by_cond;
+    std::vector<Move> own_history_;
+
+public:
+    DBS(double discount_factor = 0.75,
+        int promo = 3,
+        int viol = 4,
+        int reject = 3,
+        int depth = 5)
+        : alpha(discount_factor), promotion_threshold(promo),
+          violation_threshold(viol), reject_threshold(reject),
+          tree_depth(depth), v(0) {
+        reset();
+    }
+
+    void reset() override {
+        Rd = create_policy(1.0, 1.0, 0.0, 0.0);
+        Rc.clear();
+        Pi = Rd;
+        violation_counts.clear();
+        v = 0;
+        own_history_.clear();
+
+        history_by_cond.clear();
+        history_by_cond[{Move::COOPERATE, Move::COOPERATE}] = {{1}, {1}};
+        history_by_cond[{Move::COOPERATE, Move::DEFECT}]   = {{1}, {1}};
+        history_by_cond[{Move::DEFECT, Move::COOPERATE}]   = {{0}, {1}};
+        history_by_cond[{Move::DEFECT, Move::DEFECT}]      = {{0}, {1}};
+    }
+
+    bool should_promote(const std::pair<std::pair<Move, Move>, Move>& r_plus) {
+        auto cond = r_plus.first;
+        Move move = r_plus.second;
+        int target = (move == Move::COOPERATE) ? 1 : 0;
+        const auto& G = history_by_cond[cond].first;
+        const auto& F = history_by_cond[cond].second;
+        int k = 1;
+        int count = 0;
+        while (k <= (int)G.size()) {
+            int idx = G.size() - k;
+            if (F[idx] == 1) {
+                if (G[idx] == target) {
+                    count++;
+                } else {
+                    break;
+                }
+            }
+            k++;
+        }
+        return count >= promotion_threshold;
+    }
+
+    bool should_demote(const std::pair<std::pair<Move, Move>, Move>& r_minus) {
+        return violation_counts[r_minus.first] >= violation_threshold;
+    }
+
+    void update_history_by_cond(const std::vector<Move>& opp_history) {
+        int own_len = own_history_.size();
+        if (own_len < 2) return;
+        auto two_moves_ago = std::make_pair(own_history_[own_len-2], opp_history[opp_history.size()-2]);
+        Move opp_last = opp_history.back();
+
+        for (auto& entry : history_by_cond) {
+            auto cond = entry.first;
+            auto& G = entry.second.first;
+            auto& F = entry.second.second;
+            if (cond == two_moves_ago) {
+                G.push_back(opp_last == Move::COOPERATE ? 1 : 0);
+                F.push_back(1);
+            } else {
+                G.push_back(0);
+                F.push_back(0);
+            }
+        }
+    }
+
+    double compute_prob_rule(const std::pair<Move, Move>& outcome) {
+        const auto& G = history_by_cond[outcome].first;
+        const auto& F = history_by_cond[outcome].second;
+        double disc_g = 0.0, disc_f = 0.0;
+        double alpha_k = 1.0;
+        for (int i = (int)G.size() - 1; i >= 0; --i) {
+            disc_g += alpha_k * G[i];
+            disc_f += alpha_k * F[i];
+            alpha_k *= alpha;
+        }
+        if (disc_f == 0.0) return 0.0;
+        return disc_g / disc_f;
+    }
+
+    Move getMove(uint64_t opp_history_bits, uint64_t my_history_bits) override {
+        if (my_history_bits == 0) {
+            own_history_.push_back(Move::COOPERATE);
+            return Move::COOPERATE;
+        }
+
+        bool my_last_bit = my_history_bits & 1ULL;
+        bool my_prev_bit = (my_history_bits >> 1) & 1ULL;
+        bool opp_last_bit = opp_history_bits & 1ULL;
+        bool opp_prev_bit = (opp_history_bits >> 1) & 1ULL;
+
+        Move my_last = my_last_bit ? Move::DEFECT : Move::COOPERATE;
+        Move my_prev = my_prev_bit ? Move::DEFECT : Move::COOPERATE;
+        Move opp_last = opp_last_bit ? Move::DEFECT : Move::COOPERATE;
+        Move opp_prev = opp_prev_bit ? Move::DEFECT : Move::COOPERATE;
+
+        std::vector<Move> opp_history;
+        uint64_t tmp = opp_history_bits;
+        while (tmp) {
+            opp_history.push_back((tmp & 1ULL) ? Move::DEFECT : Move::COOPERATE);
+            tmp >>= 1;
+        }
+        std::reverse(opp_history.begin(), opp_history.end());
+
+        own_history_.push_back(my_last);
+
+        if (own_history_.size() >= 2) {
+            update_history_by_cond(opp_history);
+
+            auto two_moves_ago = std::make_pair(my_prev, opp_prev);
+            auto r_plus = std::make_pair(two_moves_ago, opp_last);
+            Move opp_last_opposite = (opp_last == Move::COOPERATE) ? Move::DEFECT : Move::COOPERATE;
+            auto r_minus = std::make_pair(two_moves_ago, opp_last_opposite);
+
+            if (Rc.find(two_moves_ago) == Rc.end()) {
+                if (should_promote(r_plus)) {
+                    Rc[two_moves_ago] = (opp_last == Move::COOPERATE) ? 1.0 : 0.0;
+                    violation_counts[two_moves_ago] = 0;
+                }
+            }
+
+            if (Rc.find(two_moves_ago) != Rc.end()) {
+                double expected = Rc[two_moves_ago];
+                Move expected_move = (expected >= 0.5) ? Move::COOPERATE : Move::DEFECT;
+                if (opp_last == expected_move) {
+                    violation_counts[two_moves_ago] = 0;
+                } else if (opp_last_opposite == expected_move) {
+                    violation_counts[two_moves_ago]++;
+                    if (should_demote(r_minus)) {
+                        for (auto& kv : Rc) Rd[kv.first] = kv.second;
+                        Rc.clear();
+                        violation_counts.clear();
+                        v = 0;
+                    }
+                }
+            }
+
+            bool r_plus_in_Rc = (Rc.find(two_moves_ago) != Rc.end() &&
+                                 ((Rc[two_moves_ago] >= 0.5 && opp_last == Move::COOPERATE) ||
+                                  (Rc[two_moves_ago] < 0.5 && opp_last == Move::DEFECT)));
+            bool r_minus_in_Rd = (Rd.find(two_moves_ago) != Rd.end() &&
+                                  ((Rd[two_moves_ago] >= 0.5 && opp_last_opposite == Move::COOPERATE) ||
+                                   (Rd[two_moves_ago] < 0.5 && opp_last_opposite == Move::DEFECT)));
+
+            if (r_minus_in_Rd) v++;
+            if (v > reject_threshold || (r_plus_in_Rc && r_minus_in_Rd)) {
+                Rd.clear();
+                v = 0;
+            }
+
+            std::map<std::pair<Move, Move>, double> Rp;
+            std::vector<std::pair<Move, Move>> all_cond = {
+                {Move::COOPERATE, Move::COOPERATE},
+                {Move::COOPERATE, Move::DEFECT},
+                {Move::DEFECT, Move::COOPERATE},
+                {Move::DEFECT, Move::DEFECT}
+            };
+            for (auto& cond : all_cond) {
+                if (Rc.find(cond) == Rc.end() && Rd.find(cond) == Rd.end()) {
+                    Rp[cond] = compute_prob_rule(cond);
+                }
+            }
+
+            Pi.clear();
+            for (auto& kv : Rc) Pi[kv.first] = kv.second;
+            for (auto& kv : Rd) Pi[kv.first] = kv.second;
+            for (auto& kv : Rp) Pi[kv.first] = kv.second;
+        }
+
+        return move_gen(my_last, opp_last, Pi, tree_depth);
+    }
+};
+
+class TrickyDefector : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) {
+            ++rounds;
+            tmp >>= 1;
+        }
+        if (rounds >= 3 && (opp_history & 0x7ULL) == 0x7ULL) {
+            int defects = std::bitset<64>(opp_history).count();
+            if (defects < rounds) {
+                return Move::COOPERATE;
+            }
+        }
+        return Move::DEFECT;
+    }
+};
+
+class Doubler : public IStrategy {
+public:
+    void reset() override {}
+
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        if (my_history == 0) {
+            return Move::COOPERATE;
+        }
+
+        bool last_opp_defect = (opp_history & 1ULL) != 0;
+
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) {
+            ++rounds;
+            tmp >>= 1;
+        }
+        int defections = __builtin_popcountll(opp_history);
+        int cooperations = rounds - defections;
+
+        if (last_opp_defect && cooperations <= 2 * defections) {
+            return Move::DEFECT;
+        }
+        return Move::COOPERATE;
+    }
+};
+
+class FSMPlayer : public IStrategy {
+protected:
+    struct Transition {
+        int next_state;
+        Move next_action;
+    };
+    std::map<std::pair<int, Move>, Transition> transitions;
+    int state;
+    int initial_state;
+    Move initial_action;
+
+public:
+    FSMPlayer(const std::map<std::pair<int, Move>, Transition>& trans,
+              int init_state, Move init_action)
+        : transitions(trans), state(init_state), initial_state(init_state),
+          initial_action(init_action) {}
+
+    void reset() override {
+        state = initial_state;
+    }
+
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        if (my_history == 0) {
+            return initial_action;
+        }
+        bool opp_last_defect = (opp_history & 1ULL) != 0;
+        Move opp_last = opp_last_defect ? Move::DEFECT : Move::COOPERATE;
+        auto key = std::make_pair(state, opp_last);
+        auto it = transitions.find(key);
+        if (it == transitions.end()) {
+            return Move::COOPERATE;
+        }
+        const Transition& t = it->second;
+        state = t.next_state;
+        return t.next_action;
+    }
+};
+
+class Fortress3 : public FSMPlayer {
+public:
+    Fortress3() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{1, Move::DEFECT},    {2, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{2, Move::DEFECT},    {3, Move::COOPERATE}},
+            {{3, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{3, Move::DEFECT},    {1, Move::DEFECT}}
+        },
+        1, Move::DEFECT
+    ) {}
+};
+
+class Fortress4 : public FSMPlayer {
+public:
+    Fortress4() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{1, Move::DEFECT},    {2, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{2, Move::DEFECT},    {3, Move::DEFECT}},
+            {{3, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{3, Move::DEFECT},    {4, Move::COOPERATE}},
+            {{4, Move::COOPERATE}, {4, Move::COOPERATE}},
+            {{4, Move::DEFECT},    {1, Move::DEFECT}}
+        },
+        1, Move::DEFECT
+    ) {}
+};
+
+class Predator : public FSMPlayer {
+public:
+    Predator() : FSMPlayer(
+        {
+            {{0, Move::COOPERATE}, {0, Move::DEFECT}},
+            {{0, Move::DEFECT},    {1, Move::DEFECT}},
+            {{1, Move::COOPERATE}, {2, Move::DEFECT}},
+            {{1, Move::DEFECT},    {3, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {4, Move::COOPERATE}},
+            {{2, Move::DEFECT},    {3, Move::DEFECT}},
+            {{3, Move::COOPERATE}, {5, Move::DEFECT}},
+            {{3, Move::DEFECT},    {4, Move::COOPERATE}},
+            {{4, Move::COOPERATE}, {2, Move::COOPERATE}},
+            {{4, Move::DEFECT},    {6, Move::DEFECT}},
+            {{5, Move::COOPERATE}, {7, Move::DEFECT}},
+            {{5, Move::DEFECT},    {3, Move::DEFECT}},
+            {{6, Move::COOPERATE}, {7, Move::COOPERATE}},
+            {{6, Move::DEFECT},    {7, Move::DEFECT}},
+            {{7, Move::COOPERATE}, {8, Move::DEFECT}},
+            {{7, Move::DEFECT},    {7, Move::DEFECT}},
+            {{8, Move::COOPERATE}, {8, Move::DEFECT}},
+            {{8, Move::DEFECT},    {6, Move::DEFECT}}
+        },
+        0, Move::COOPERATE
+    ) {}
+};
+
+class Pun1 : public FSMPlayer {
+public:
+    Pun1() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {2, Move::COOPERATE}},
+            {{1, Move::DEFECT},    {2, Move::COOPERATE}},
+            {{2, Move::COOPERATE}, {1, Move::COOPERATE}},
+            {{2, Move::DEFECT},    {1, Move::DEFECT}}
+        },
+        1, Move::DEFECT
+    ) {}
+};
+
+class Raider : public FSMPlayer {
+public:
+    Raider() : FSMPlayer(
+        {
+            {{0, Move::COOPERATE}, {2, Move::DEFECT}},
+            {{0, Move::DEFECT},    {2, Move::DEFECT}},
+            {{1, Move::COOPERATE}, {1, Move::COOPERATE}},
+            {{1, Move::DEFECT},    {1, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {0, Move::DEFECT}},
+            {{2, Move::DEFECT},    {3, Move::COOPERATE}},
+            {{3, Move::COOPERATE}, {0, Move::DEFECT}},
+            {{3, Move::DEFECT},    {1, Move::COOPERATE}}
+        },
+        0, Move::DEFECT
+    ) {}
+};
+
+class Ripoff : public FSMPlayer {
+public:
+    Ripoff() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {2, Move::COOPERATE}},
+            {{1, Move::DEFECT},    {3, Move::COOPERATE}},
+            {{2, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{2, Move::DEFECT},    {3, Move::COOPERATE}},
+            {{3, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{3, Move::DEFECT},    {3, Move::DEFECT}}
+        },
+        1, Move::DEFECT
+    ) {}
+};
+
+class UsuallyCooperates : public FSMPlayer {
+public:
+    UsuallyCooperates() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {1, Move::COOPERATE}},
+            {{1, Move::DEFECT},    {2, Move::COOPERATE}},
+            {{2, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{2, Move::DEFECT},    {1, Move::COOPERATE}}
+        },
+        1, Move::COOPERATE
+    ) {}
+};
+
+class UsuallyDefects : public FSMPlayer {
+public:
+    UsuallyDefects() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {2, Move::DEFECT}},
+            {{1, Move::DEFECT},    {1, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{2, Move::DEFECT},    {1, Move::COOPERATE}}
+        },
+        1, Move::DEFECT
+    ) {}
+};
+
+class SolutionB1 : public FSMPlayer {
+public:
+    SolutionB1() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {2, Move::DEFECT}},
+            {{1, Move::DEFECT},    {1, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {2, Move::COOPERATE}},
+            {{2, Move::DEFECT},    {3, Move::COOPERATE}},
+            {{3, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{3, Move::DEFECT},    {3, Move::COOPERATE}}
+        },
+        1, Move::DEFECT
+    ) {}
+};
+
+class SolutionB5 : public FSMPlayer {
+public:
+    SolutionB5() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {2, Move::COOPERATE}},
+            {{1, Move::DEFECT},    {6, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {2, Move::COOPERATE}},
+            {{2, Move::DEFECT},    {3, Move::DEFECT}},
+            {{3, Move::COOPERATE}, {6, Move::COOPERATE}},
+            {{3, Move::DEFECT},    {1, Move::DEFECT}},
+            {{4, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{4, Move::DEFECT},    {6, Move::DEFECT}},
+            {{5, Move::COOPERATE}, {5, Move::DEFECT}},
+            {{5, Move::DEFECT},    {4, Move::DEFECT}},
+            {{6, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{6, Move::DEFECT},    {5, Move::DEFECT}}
+        },
+        1, Move::DEFECT
+    ) {}
+};
+
+class Thumper : public FSMPlayer {
+public:
+    Thumper() : FSMPlayer(
+        {
+            {{1, Move::COOPERATE}, {1, Move::COOPERATE}},
+            {{1, Move::DEFECT},    {2, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{2, Move::DEFECT},    {1, Move::DEFECT}}
+        },
+        1, Move::COOPERATE
+    ) {}
+};
+
+class EvolvedFSM4 : public FSMPlayer {
+public:
+    EvolvedFSM4() : FSMPlayer(
+        {
+            {{0, Move::COOPERATE}, {0, Move::COOPERATE}},
+            {{0, Move::DEFECT},    {2, Move::DEFECT}},
+            {{1, Move::COOPERATE}, {3, Move::DEFECT}},
+            {{1, Move::DEFECT},    {0, Move::COOPERATE}},
+            {{2, Move::COOPERATE}, {2, Move::DEFECT}},
+            {{2, Move::DEFECT},    {1, Move::COOPERATE}},
+            {{3, Move::COOPERATE}, {3, Move::DEFECT}},
+            {{3, Move::DEFECT},    {1, Move::DEFECT}}
+        },
+        0, Move::COOPERATE
+    ) {}
+};
+
+class EvolvedFSM16 : public FSMPlayer {
+public:
+    EvolvedFSM16() : FSMPlayer(
+        {
+            {{0, Move::COOPERATE}, {0, Move::COOPERATE}},
+            {{0, Move::DEFECT},    {12, Move::DEFECT}},
+            {{1, Move::COOPERATE}, {3, Move::DEFECT}},
+            {{1, Move::DEFECT},    {6, Move::COOPERATE}},
+            {{2, Move::COOPERATE}, {2, Move::DEFECT}},
+            {{2, Move::DEFECT},    {14, Move::DEFECT}},
+            {{3, Move::COOPERATE}, {3, Move::DEFECT}},
+            {{3, Move::DEFECT},    {3, Move::DEFECT}},
+            {{5, Move::COOPERATE}, {12, Move::DEFECT}},
+            {{5, Move::DEFECT},    {10, Move::DEFECT}},
+            {{6, Move::COOPERATE}, {5, Move::COOPERATE}},
+            {{6, Move::DEFECT},    {12, Move::DEFECT}},
+            {{7, Move::COOPERATE}, {3, Move::DEFECT}},
+            {{7, Move::DEFECT},    {1, Move::COOPERATE}},
+            {{8, Move::COOPERATE}, {5, Move::COOPERATE}},
+            {{8, Move::DEFECT},    {5, Move::COOPERATE}},
+            {{10, Move::COOPERATE}, {11, Move::DEFECT}},
+            {{10, Move::DEFECT},   {8, Move::COOPERATE}},
+            {{11, Move::COOPERATE}, {15, Move::DEFECT}},
+            {{11, Move::DEFECT},   {5, Move::DEFECT}},
+            {{12, Move::COOPERATE}, {8, Move::COOPERATE}},
+            {{12, Move::DEFECT},   {11, Move::DEFECT}},
+            {{13, Move::COOPERATE}, {13, Move::DEFECT}},
+            {{13, Move::DEFECT},   {7, Move::DEFECT}},
+            {{14, Move::COOPERATE}, {13, Move::DEFECT}},
+            {{14, Move::DEFECT},   {13, Move::DEFECT}},
+            {{15, Move::COOPERATE}, {15, Move::DEFECT}},
+            {{15, Move::DEFECT},   {2, Move::COOPERATE}}
+        },
+        0, Move::COOPERATE
+    ) {}
+};
+
+class EvolvedFSM16Noise05 : public FSMPlayer {
+public:
+    EvolvedFSM16Noise05() : FSMPlayer(
+        {
+            {{0, Move::COOPERATE}, {8, Move::COOPERATE}},
+            {{0, Move::DEFECT},    {3, Move::DEFECT}},
+            {{1, Move::COOPERATE}, {13, Move::COOPERATE}},
+            {{1, Move::DEFECT},    {15, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {12, Move::COOPERATE}},
+            {{2, Move::DEFECT},    {3, Move::DEFECT}},
+            {{3, Move::COOPERATE}, {10, Move::COOPERATE}},
+            {{3, Move::DEFECT},    {3, Move::DEFECT}},
+            {{4, Move::COOPERATE}, {5, Move::DEFECT}},
+            {{4, Move::DEFECT},    {4, Move::DEFECT}},
+            {{5, Move::COOPERATE}, {4, Move::DEFECT}},
+            {{5, Move::DEFECT},    {10, Move::DEFECT}},
+            {{6, Move::COOPERATE}, {8, Move::COOPERATE}},
+            {{6, Move::DEFECT},    {6, Move::DEFECT}},
+            {{8, Move::COOPERATE}, {2, Move::COOPERATE}},
+            {{8, Move::DEFECT},    {4, Move::DEFECT}},
+            {{10, Move::COOPERATE}, {4, Move::DEFECT}},
+            {{10, Move::DEFECT},   {1, Move::DEFECT}},
+            {{11, Move::COOPERATE}, {14, Move::DEFECT}},
+            {{11, Move::DEFECT},   {13, Move::COOPERATE}},
+            {{12, Move::COOPERATE}, {13, Move::COOPERATE}},
+            {{12, Move::DEFECT},   {2, Move::COOPERATE}},
+            {{13, Move::COOPERATE}, {13, Move::COOPERATE}},
+            {{13, Move::DEFECT},   {6, Move::COOPERATE}},
+            {{14, Move::COOPERATE}, {3, Move::DEFECT}},
+            {{14, Move::DEFECT},   {13, Move::DEFECT}},
+            {{15, Move::COOPERATE}, {5, Move::DEFECT}},
+            {{15, Move::DEFECT},   {11, Move::COOPERATE}}
+        },
+        0, Move::COOPERATE
+    ) {}
+};
+
+class TF1 : public FSMPlayer {
+public:
+    TF1() : FSMPlayer(
+        {
+            {{0, Move::COOPERATE}, {7, Move::COOPERATE}},
+            {{0, Move::DEFECT},    {1, Move::COOPERATE}},
+            {{1, Move::COOPERATE}, {11, Move::DEFECT}},
+            {{1, Move::DEFECT},    {11, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {8, Move::DEFECT}},
+            {{2, Move::DEFECT},    {8, Move::COOPERATE}},
+            {{3, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{3, Move::DEFECT},    {12, Move::DEFECT}},
+            {{4, Move::COOPERATE}, {6, Move::COOPERATE}},
+            {{4, Move::DEFECT},    {3, Move::COOPERATE}},
+            {{5, Move::COOPERATE}, {11, Move::COOPERATE}},
+            {{5, Move::DEFECT},    {8, Move::DEFECT}},
+            {{6, Move::COOPERATE}, {13, Move::DEFECT}},
+            {{6, Move::DEFECT},    {14, Move::COOPERATE}},
+            {{7, Move::COOPERATE}, {4, Move::DEFECT}},
+            {{7, Move::DEFECT},    {2, Move::DEFECT}},
+            {{8, Move::COOPERATE}, {14, Move::DEFECT}},
+            {{8, Move::DEFECT},    {8, Move::DEFECT}},
+            {{9, Move::COOPERATE}, {0, Move::COOPERATE}},
+            {{9, Move::DEFECT},    {10, Move::DEFECT}},
+            {{10, Move::COOPERATE}, {8, Move::COOPERATE}},
+            {{10, Move::DEFECT},   {15, Move::COOPERATE}},
+            {{11, Move::COOPERATE}, {6, Move::DEFECT}},
+            {{11, Move::DEFECT},   {5, Move::DEFECT}},
+            {{12, Move::COOPERATE}, {6, Move::DEFECT}},
+            {{12, Move::DEFECT},   {9, Move::DEFECT}},
+            {{13, Move::COOPERATE}, {9, Move::DEFECT}},
+            {{13, Move::DEFECT},   {8, Move::DEFECT}},
+            {{14, Move::COOPERATE}, {8, Move::DEFECT}},
+            {{14, Move::DEFECT},   {13, Move::DEFECT}},
+            {{15, Move::COOPERATE}, {4, Move::COOPERATE}},
+            {{15, Move::DEFECT},   {5, Move::COOPERATE}}
+        },
+        0, Move::COOPERATE
+    ) {}
+};
+
+class TF2 : public FSMPlayer {
+public:
+    TF2() : FSMPlayer(
+        {
+            {{0, Move::COOPERATE}, {13, Move::DEFECT}},
+            {{0, Move::DEFECT},    {12, Move::DEFECT}},
+            {{1, Move::COOPERATE}, {3, Move::DEFECT}},
+            {{1, Move::DEFECT},    {4, Move::DEFECT}},
+            {{2, Move::COOPERATE}, {14, Move::DEFECT}},
+            {{2, Move::DEFECT},    {9, Move::DEFECT}},
+            {{3, Move::COOPERATE}, {0, Move::COOPERATE}},
+            {{3, Move::DEFECT},    {1, Move::DEFECT}},
+            {{4, Move::COOPERATE}, {1, Move::DEFECT}},
+            {{4, Move::DEFECT},    {2, Move::DEFECT}},
+            {{7, Move::COOPERATE}, {12, Move::DEFECT}},
+            {{7, Move::DEFECT},    {2, Move::DEFECT}},
+            {{8, Move::COOPERATE}, {7, Move::DEFECT}},
+            {{8, Move::DEFECT},    {9, Move::DEFECT}},
+            {{9, Move::COOPERATE}, {8, Move::DEFECT}},
+            {{9, Move::DEFECT},    {0, Move::DEFECT}},
+            {{10, Move::COOPERATE}, {2, Move::COOPERATE}},
+            {{10, Move::DEFECT},   {15, Move::COOPERATE}},
+            {{11, Move::COOPERATE}, {7, Move::DEFECT}},
+            {{11, Move::DEFECT},   {13, Move::DEFECT}},
+            {{12, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{12, Move::DEFECT},   {8, Move::DEFECT}},
+            {{13, Move::COOPERATE}, {7, Move::COOPERATE}},
+            {{13, Move::DEFECT},   {10, Move::DEFECT}},
+            {{14, Move::COOPERATE}, {10, Move::DEFECT}},
+            {{14, Move::DEFECT},   {7, Move::DEFECT}},
+            {{15, Move::COOPERATE}, {15, Move::COOPERATE}},
+            {{15, Move::DEFECT},   {11, Move::DEFECT}}
+        },
+        0, Move::COOPERATE
+    ) {}
+};
+
+class TF3 : public FSMPlayer {
+public:
+    TF3() : FSMPlayer(
+        {
+            {{0, Move::COOPERATE}, {0, Move::COOPERATE}},
+            {{0, Move::DEFECT},    {3, Move::COOPERATE}},
+            {{1, Move::COOPERATE}, {5, Move::DEFECT}},
+            {{1, Move::DEFECT},    {0, Move::COOPERATE}},
+            {{2, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{2, Move::DEFECT},    {2, Move::DEFECT}},
+            {{3, Move::COOPERATE}, {4, Move::DEFECT}},
+            {{3, Move::DEFECT},    {6, Move::DEFECT}},
+            {{4, Move::COOPERATE}, {3, Move::COOPERATE}},
+            {{4, Move::DEFECT},    {1, Move::DEFECT}},
+            {{5, Move::COOPERATE}, {6, Move::COOPERATE}},
+            {{5, Move::DEFECT},    {3, Move::DEFECT}},
+            {{6, Move::COOPERATE}, {6, Move::DEFECT}},
+            {{6, Move::DEFECT},    {6, Move::DEFECT}},
+            {{7, Move::COOPERATE}, {7, Move::DEFECT}},
+            {{7, Move::DEFECT},    {5, Move::COOPERATE}}
+        },
+        0, Move::COOPERATE
+    ) {}
+};
+
+class Forgiver : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        int len = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++len; tmp >>= 1; }
+        int defections = __builtin_popcountll(opp_history);
+        if (defections * 10 > len) return Move::DEFECT;
+        return Move::COOPERATE;
+    }
+};
+
+class ForgivingTitForTat : public IStrategy {
+public:
+    void reset() override {}
+    Move getMove(uint64_t opp_history, uint64_t) override {
+        if (opp_history == 0) return Move::COOPERATE;
+        int len = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++len; tmp >>= 1; }
+        int defections = __builtin_popcountll(opp_history);
+        if (defections * 10 > len) {
+            return (opp_history & 1ULL) ? Move::DEFECT : Move::COOPERATE;
+        }
+        return Move::COOPERATE;
+    }
+};
+
+class Gambler : public IStrategy {
+protected:
+    int self_plays;
+    int op_plays;
+    int op_openings;
+    std::vector<double> pattern;
+    std::mt19937 rng;
+    std::uniform_real_distribution<double> dist;
+
+    static uint64_t extract_sequence(uint64_t history, int num_rounds, int length, bool from_start) {
+        uint64_t result = 0;
+        if (from_start) {
+            for (int i = 0; i < length; ++i) {
+                int pos = num_rounds - 1 - i;
+                if (pos < 0) break;
+                uint64_t bit = (history >> pos) & 1ULL;
+                result = (result << 1) | bit;
+            }
+        } else {
+            for (int i = length - 1; i >= 0; --i) {
+                if (i > num_rounds - 1) continue;
+                uint64_t bit = (history >> i) & 1ULL;
+                result = (result << 1) | bit;
+            }
+        }
+        return result;
+    }
+
+    int compute_index(uint64_t opp_history, uint64_t my_history) {
+        int rounds = 0;
+        uint64_t tmp = opp_history;
+        while (tmp) { ++rounds; tmp >>= 1; }
+        if (rounds < self_plays || rounds < op_plays || rounds < op_openings) return -1;
+
+        uint64_t opp_start = extract_sequence(opp_history, rounds, op_openings, true);
+        uint64_t self_recent = extract_sequence(my_history, rounds, self_plays, false);
+        uint64_t opp_recent = extract_sequence(opp_history, rounds, op_plays, false);
+
+        int opp_start_idx = static_cast<int>(opp_start);
+        int self_idx = static_cast<int>(self_recent);
+        int opp_idx = static_cast<int>(opp_recent);
+
+        int total_opp_hist = 1 << op_plays;
+        int total_self_hist = 1 << self_plays;
+        int total_opp_start = 1 << op_openings;
+
+        int idx = opp_start_idx * total_self_hist * total_opp_hist
+                + self_idx * total_opp_hist
+                + opp_idx;
+        return idx;
+    }
+
+public:
+    Gambler(int sp, int opp, int opp_open, const std::vector<double>& pat)
+        : self_plays(sp), op_plays(opp), op_openings(opp_open), pattern(pat),
+          rng(std::random_device{}()), dist(0.0, 1.0) {}
+
+    void reset() override {
+        rng.seed(std::random_device{}());
+    }
+
+    Move getMove(uint64_t opp_history, uint64_t my_history) override {
+        int idx = compute_index(opp_history, my_history);
+        if (idx < 0 || idx >= static_cast<int>(pattern.size())) {
+            return Move::COOPERATE;
+        }
+        double prob = pattern[idx];
+        std::bernoulli_distribution bern(prob);
+        return bern(rng) ? Move::COOPERATE : Move::DEFECT;
+    }
+};
+
+class PSOGamblerMem1 : public Gambler {
+public:
+    PSOGamblerMem1() : Gambler(1, 1, 0, {1.0, 0.52173487, 0.0, 0.12050939}) {}
+};
+
+class PSOGambler1_1_1 : public Gambler {
+public:
+    PSOGambler1_1_1() : Gambler(1, 1, 1, {1.0, 1.0, 0.12304797, 0.57740178, 0.0, 0.0, 0.13581423, 0.11886807}) {}
+};
+
+class PSOGambler2_2_2 : public Gambler {
+public:
+    PSOGambler2_2_2() : Gambler(2, 2, 2, {
+        1.0, 1.0, 1.0, 0.0, 1.0, 0.95280465, 0.0, 0.0,
+        0.0, 0.80897541, 0.0, 0.0, 0.02126434, 0.0, 0.43278586, 0.0,
+        0.0, 0.0, 1.0, 0.15140743, 1.0, 0.0, 0.0, 0.0,
+        1.0, 0.0, 0.23563137, 0.0, 0.0, 0.65147565, 1.0, 0.0,
+        0.0, 0.15412392, 1.0, 0.0, 0.0, 0.24922166, 1.0, 0.0,
+        0.0, 0.0, 0.00227615, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        0.0, 0.0, 0.0, 0.77344942, 1.0, 0.24523149, 1.0, 0.0
+    }) {}
+};
+
+class PSOGambler2_2_2_Noise05 : public Gambler {
+public:
+    PSOGambler2_2_2_Noise05() : Gambler(2, 2, 2, {
+        1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.98603825, 1.0,
+        1.0, 0.0, 0.0, 0.16240799, 0.63548102, 0.0, 0.0, 0.0,
+        1.0, 0.0, 1.0, 0.0, 1.0, 0.13863175, 0.06434619, 1.0,
+        1.0, 1.0, 1.0, 1.0, 0.0, 0.7724137, 1.0, 0.0,
+        0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.50999729, 1.0,
+        0.0, 0.0, 0.00524508, 0.87463905, 0.0, 0.07127653, 1.0, 0.0,
+        1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0,
+        0.0, 0.28124022, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0
+    }) {}
+};
+
+class ZDMem2 : public Gambler {
+public:
+    ZDMem2() : Gambler(2, 2, 0, {
+        11.0/12.0, 4.0/11.0, 7.0/9.0, 1.0/10.0,
+        5.0/6.0, 3.0/11.0, 7.0/9.0, 1.0/10.0,
+        2.0/3.0, 1.0/11.0, 7.0/9.0, 1.0/10.0,
+        3.0/4.0, 2.0/11.0, 7.0/9.0, 1.0/10.0
+    }) {}
 };
 
 #endif
