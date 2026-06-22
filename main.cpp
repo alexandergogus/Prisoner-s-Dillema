@@ -1,4 +1,5 @@
 #include "strategies.hpp"
+#include "icheater_strategy.hpp"
 #include <iostream>
 #include <vector>
 #include <memory>
@@ -158,6 +159,29 @@ int main() {
     strategies.push_back(std::make_unique<PSOGambler2_2_2>());
     strategies.push_back(std::make_unique<PSOGambler2_2_2_Noise05>());
     strategies.push_back(std::make_unique<ZDMem2>());
+    strategies.push_back(std::make_unique<Geller>());
+    strategies.push_back(std::make_unique<GellerCooperator>());
+    strategies.push_back(std::make_unique<GellerDefector>());
+    strategies.push_back(std::make_unique<GoByMajority>());
+    strategies.push_back(std::make_unique<GoByMajority40>());
+    strategies.push_back(std::make_unique<GoByMajority20>());
+    strategies.push_back(std::make_unique<GoByMajority10>());
+    strategies.push_back(std::make_unique<GoByMajority5>());
+    strategies.push_back(std::make_unique<HardGoByMajority>());
+    strategies.push_back(std::make_unique<HardGoByMajority40>());
+    strategies.push_back(std::make_unique<HardGoByMajority20>());
+    strategies.push_back(std::make_unique<HardGoByMajority10>());
+    strategies.push_back(std::make_unique<HardGoByMajority5>());
+    strategies.push_back(std::make_unique<GradualKiller>());
+    strategies.push_back(std::make_unique<ForgetfulGrudger>());
+    strategies.push_back(std::make_unique<OppositeGrudger>());
+    strategies.push_back(std::make_unique<Aggravater>());
+    strategies.push_back(std::make_unique<SoftGrudger>());
+    strategies.push_back(std::make_unique<GrudgerAlternator>());
+    strategies.push_back(std::make_unique<EasyGo>());
+    strategies.push_back(std::make_unique<GeneralSoftGrudger>());
+    strategies.push_back(std::make_unique<Grumpy>());
+    strategies.push_back(std::make_unique<Handshake>());
 
     const int ROUNDS = 500;
     const int NUM = strategies.size();
@@ -171,9 +195,30 @@ int main() {
             uint64_t hist_i = 0, hist_j = 0;
             int score_i = 0, score_j = 0;
 
+            ICheaterStrategy* cheater_i = dynamic_cast<ICheaterStrategy*>(strategies[i].get());
+            ICheaterStrategy* cheater_j = dynamic_cast<ICheaterStrategy*>(strategies[j].get());
+
             for (int r = 0; r < ROUNDS; ++r) {
-                Move mi = strategies[i]->getMove(hist_i, hist_j);
-                Move mj = strategies[j]->getMove(hist_j, hist_i);
+                Move mi, mj;
+
+                if (cheater_i && cheater_j) {
+                    mi = strategies[i]->getMove(hist_i, hist_j);
+                    mj = strategies[j]->getMove(hist_j, hist_i);
+                }
+                else if (cheater_i) {
+                    mj = strategies[j]->getMove(hist_j, hist_i);
+                    cheater_i->setOpponentMove(mj);
+                    mi = strategies[i]->getMove(hist_i, hist_j);
+                }
+                else if (cheater_j) {
+                    mi = strategies[i]->getMove(hist_i, hist_j);
+                    cheater_j->setOpponentMove(mi);
+                    mj = strategies[j]->getMove(hist_j, hist_i);
+                }
+                else {
+                    mi = strategies[i]->getMove(hist_i, hist_j);
+                    mj = strategies[j]->getMove(hist_j, hist_i);
+                }
 
                 score_i += get_payoff(mi, mj);
                 score_j += get_payoff(mj, mi);
